@@ -43,8 +43,10 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/YueDu.app Payload/
           zip -qry YueDu-unsigned.ipa Payload
           ls -lh YueDu-unsigned.ipa
-          SIZE=$(stat -f%z YueDu-unsigned.ipa)
-          if [ "$SIZE" -lt 50000 ]; then echo "IPA 太小（$SIZE 字节），疑似空包"; exit 1; fi
+          unzip -l YueDu-unsigned.ipa
+          # 必须包含主程序和 Info.plist，否则判定为空包
+          unzip -l YueDu-unsigned.ipa | grep -q "Payload/YueDu.app/YueDu$" || { echo "缺少主程序，空包"; exit 1; }
+          unzip -l YueDu-unsigned.ipa | grep -q "Payload/YueDu.app/Info.plist" || { echo "缺少 Info.plist"; exit 1; }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
