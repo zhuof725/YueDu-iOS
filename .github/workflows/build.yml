@@ -23,7 +23,7 @@ jobs:
 
       - name: Build (unsigned)
         run: |
-          set -o pipefail
+          set +e
           xcodebuild \
             -project YueDu.xcodeproj \
             -scheme YueDu \
@@ -32,8 +32,10 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tee build.log | grep -E "error:|warning: unre|BUILD" || true
-          test -d build/Build/Products/Release-iphoneos/YueDu.app
+            build > build.log 2>&1 || { grep -E "error:" build.log | head -50; tail -30 build.log; exit 1; }
+          grep -E "\*\* BUILD" build.log
+          # 必须真的有可执行文件，否则算失败
+          test -f build/Build/Products/Release-iphoneos/YueDu.app/YueDu
 
       - name: Package IPA
         run: |
@@ -41,6 +43,8 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/YueDu.app Payload/
           zip -qry YueDu-unsigned.ipa Payload
           ls -lh YueDu-unsigned.ipa
+          SIZE=$(stat -f%z YueDu-unsigned.ipa)
+          if [ "$SIZE" -lt 50000 ]; then echo "IPA 太小（$SIZE 字节），疑似空包"; exit 1; fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
