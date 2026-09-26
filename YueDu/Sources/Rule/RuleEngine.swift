@@ -14,6 +14,8 @@ final class RuleEngine {
     /// JS 出错时回调（登录流程用它把错误显示给用户）
     var onJSError: ((String) -> Void)?
     var lastError: String?
+    /// 登录界面（书源脚本 java.upLoginData / reLoginView 回调到这里）
+    weak var loginCallback: LoginUICallback?
 
     private(set) var content: Any?
     private(set) var baseUrl: String?

@@ -228,6 +228,32 @@ check("登录 无前缀 JS 不当网址", "\(SourceLogin.loginPageUrl(loginSrc3)
 check("登录 有 login 函数", "\(SourceLogin.hasLoginFunction(loginSrc3))", "true")
 do { try SourceLogin.login(loginSrc3, info: ["账号": "me", "密码": "pw"]) } catch { print("  login3 error: \(error)") }
 check("登录 Map.get 写法", LoginStore.headerMap(loginSrc3.bookSourceUrl)["Authorization"] ?? "", "Bearer mepw")
+// 书源自带的登录界面：样式、单引号显示名、JS 生成界面、脚本回调 upLoginData/toast
+final class TestLoginCB: LoginUICallback {
+    var data: [String: Any]?; var toasts: [String] = []; var re = 0
+    func upLoginData(_ d: [String: Any]?) { data = d }
+    func reLoginView(_ deltaUp: Bool) { re += 1 }
+    func toast(_ msg: String) { toasts.append(msg) }
+    func openBrowser(_ url: String, title: String) {}
+}
+let uiSrc = BookSource(bookSourceUrl: "https://ui.test.com", bookSourceName: "UI",
+    loginUrl: "function fill(){ java.upLoginData({'账号':'auto'}); java.toast('已填充'); java.reLoginView(); }\nfunction login(){}",
+    loginUi: "[{\"name\":\"账号\",\"type\":\"text\",\"style\":{\"layout_flexBasisPercent\":0.5,\"layout_flexGrow\":1}},{\"name\":\"fill\",\"type\":\"button\",\"viewName\":\"'一键填充'\",\"action\":\"fill()\",\"style\":{\"layout_wrapBefore\":true}},{\"name\":\"线路\",\"type\":\"select\",\"chars\":[\"A\",\"B\"],\"default\":\"B\"}]")
+let uiRows = SourceLogin.rows(uiSrc)
+check("登录UI 行数", "\(uiRows.count)", "3")
+check("登录UI 样式 basis", "\(uiRows.first?.style.flexBasisPercent ?? 0)", "0.5")
+check("登录UI 样式 wrapBefore", "\(uiRows[1].style.wrapBefore)", "true")
+check("登录UI 单引号显示名", uiRows[1].literalViewName ?? "", "一键填充")
+check("登录UI select 默认", uiRows[2].defaultValue ?? "", "B")
+let cb = TestLoginCB()
+_ = try? SourceLogin.buttonAction(uiSrc, action: "fill()", info: [:], callback: cb)
+check("登录UI upLoginData 回调", "\(cb.data?["账号"] ?? "")", "auto")
+check("登录UI toast 回调", cb.toasts.first ?? "", "已填充")
+check("登录UI reLoginView 回调", "\(cb.re)", "1")
+let jsUiSrc = BookSource(bookSourceUrl: "https://ui2.test.com", bookSourceName: "UI2",
+    loginUrl: "function login(){}",
+    loginUi: "@js:\nvar a=[{name:'手机号',type:'text'}]; if(result.get('模式')=='验证码') a.push({name:'验证码',type:'text'}); JSON.stringify(a)")
+check("登录UI JS 生成", "\(SourceLogin.rows(jsUiSrc, current: ["模式": "验证码"]).count)", "2")
 let loginSrc4 = BookSource(bookSourceUrl: "https://www.l4.com", bookSourceName: "L4", loginUrl: "https://www.l4.com/login.php")
 check("登录 网址型", SourceLogin.loginPageUrl(loginSrc4) ?? "", "https://www.l4.com/login.php")
 check("登录 网址型 非 JS", "\(SourceLogin.loginJs(loginSrc4) == nil)", "true")

@@ -2,16 +2,61 @@ import Foundation
 
 /// 登录表单的一项（对应 Legado RowUi）
 struct LoginRow: Identifiable {
-    var id: String { name + "#" + type }
+    var index: Int = 0
+    var id: String { "\(index)#" + name + "#" + type }
     var name: String
     var type: String          // text / password / button / toggle / select
     var action: String?
     var chars: [String]
     var defaultValue: String?
     var viewName: String?
+    var style = LoginRowStyle()
 
     var label: String { viewName?.isEmpty == false ? viewName! : name }
     var isInput: Bool { type == "text" || type == "password" }
+
+    /// viewName 写成 'xxx'（单引号包住，3~19 字）时是纯文字；其他情况是 JS（Legado 规则）
+    var literalViewName: String? {
+        guard let v = viewName else { return nil }
+        if v.count >= 3 && v.count <= 19 && v.hasPrefix("'") && v.hasSuffix("'") { return String(v.dropFirst().dropLast()) }
+        return nil
+    }
+    var viewNameNeedsJS: Bool { viewName != nil && literalViewName == nil && !(viewName ?? "").isEmpty }
+}
+
+/// 对应 Legado FlexChildStyle（Flexbox 布局参数）
+struct LoginRowStyle {
+    var flexGrow: Double = 0
+    var flexShrink: Double = 1
+    var alignSelf = "auto"
+    var flexBasisPercent: Double = -1
+    var wrapBefore = false
+    var justifySelf = "auto"
+
+    init() {}
+    init(_ o: [String: Any]?) {
+        guard let o = o else { return }
+        func num(_ k: String) -> Double? { o[k].flatMap { Double(JSONPath.stringify($0)) } }
+        flexGrow = num("layout_flexGrow") ?? 0
+        flexShrink = num("layout_flexShrink") ?? 1
+        flexBasisPercent = num("layout_flexBasisPercent") ?? -1
+        alignSelf = (o["layout_alignSelf"] as? String) ?? "auto"
+        justifySelf = (o["layout_justifySelf"] as? String) ?? "auto"
+        if let w = o["layout_wrapBefore"] { wrapBefore = (w as? Bool) ?? (JSONPath.stringify(w) == "true") }
+    }
+}
+
+/// 登录界面接收书源脚本回调（java.upLoginData / java.reLoginView / java.toast 等）
+protocol LoginUICallback: AnyObject {
+    func upLoginData(_ data: [String: Any]?)
+    func reLoginView(_ deltaUp: Bool)
+    func toast(_ msg: String)
+    func openBrowser(_ url: String, title: String)
+}
+
+/// 全局提示（没有登录界面时，java.toast 走这里）
+enum AppToast {
+    static var handler: ((String) -> Void)?
 }
 
 /// 执行书源登录相关的 JS
@@ -67,73 +112,100 @@ enum SourceLogin {
         return u
     }
 
-    /// 解析登录表单（loginUi 可以是 JSON 数组，也可以是 @js: 生成的）
-    static func rows(_ s: BookSource, current: [String: String] = [:]) -> [LoginRow] {
-        guard var ui = s.loginUi?.trimmingCharacters(in: .whitespacesAndNewlines), !ui.isEmpty else { return [] }
-        var code: String?
-        if ui.hasPrefix("@js:") { code = String(ui.dropFirst(4)) }
-        else if ui.lowercased().hasPrefix("<js>") {
+    /// loginUi 是 @js: / <js> 时返回其中代码
+    static func loginUiJs(_ s: BookSource) -> String? {
+        guard let ui = s.loginUi?.trimmingCharacters(in: .whitespacesAndNewlines), !ui.isEmpty else { return nil }
+        if ui.hasPrefix("@js:") { return String(ui.dropFirst(4)) }
+        if ui.lowercased().hasPrefix("<js>") {
             var b = String(ui.dropFirst(4))
             if let r = b.range(of: "</js>", options: [.caseInsensitive, .backwards]) { b = String(b[..<r.lowerBound]) }
-            code = b
+            return b
         }
-        if let c = code {
-            let js = (loginJs(s) ?? "") + "\n" + c
-            ui = JSEngine.stringify(run(s, js, result: current))
+        return nil
+    }
+
+    /// 解析登录表单（loginUi 可以是 JSON 数组，也可以是 @js: 生成的）
+    static func rows(_ s: BookSource, current: [String: String] = [:], callback: LoginUICallback? = nil) -> [LoginRow] {
+        guard var ui = s.loginUi?.trimmingCharacters(in: .whitespacesAndNewlines), !ui.isEmpty else { return [] }
+        if let c = loginUiJs(s) {
+            ui = (try? evalUi(s, c, info: current, callback: callback)) ?? ""
         }
         guard let parsed = BookSourceImporter.parseJSONLoose(ui) else { return [] }
         let arr: [Any] = (parsed as? [Any]) ?? [parsed]
-        return arr.compactMap { item -> LoginRow? in
-            guard let o = item as? [String: Any] else { return nil }
-            let name = (o["name"] as? String) ?? ""
-            if name.isEmpty { return nil }
+        return parseRows(arr)
+    }
+
+    static func parseRows(_ arr: [Any]) -> [LoginRow] {
+        var out: [LoginRow] = []
+        for item in arr {
+            guard let o = item as? [String: Any] else { continue }
+            let name = o["name"].map { JSONPath.stringify($0) } ?? ""
             var chars: [String] = []
             if let c = o["chars"] as? [Any] { chars = c.compactMap { $0 is NSNull ? nil : JSONPath.stringify($0) } }
-            return LoginRow(name: name,
+            var row = LoginRow(name: name,
                             type: ((o["type"] as? String) ?? "text").lowercased(),
-                            action: (o["action"] as? String),
+                            action: o["action"].flatMap { $0 is NSNull ? nil : JSONPath.stringify($0) },
                             chars: chars,
                             defaultValue: o["default"].flatMap { $0 is NSNull ? nil : JSONPath.stringify($0) },
-                            viewName: o["viewName"] as? String)
+                            viewName: o["viewName"].flatMap { $0 is NSNull ? nil : JSONPath.stringify($0) },
+                            style: LoginRowStyle(o["style"] as? [String: Any]))
+            row.index = out.count
+            out.append(row)
         }
+        return out
     }
 
     /// 在书源环境里执行一段 JS（可用 java.* / source.* / cookie.* / result）
     @discardableResult
     static func run(_ s: BookSource, _ js: String, result: [String: String], logger: DebugLog? = nil) -> Any? {
+        try? exec(s, js, info: result, logger: logger)
+    }
+
+    /// 执行「登录脚本 + 代码」，出错抛出
+    static func exec(_ s: BookSource, _ code: String, info: [String: String], isLongClick: Bool = false,
+                     callback: LoginUICallback? = nil, logger: DebugLog? = nil) throws -> Any? {
+        let js = "if (typeof result === 'object') __jmap(result);\n" + (loginJs(s) ?? "") + "\n" + code
         let engine = RuleEngine(source: s, logger: logger)
+        engine.loginCallback = callback
         engine.setContent("", baseUrl: s.bookSourceUrl)
-        let v = engine.evalJS(js, result: result, extra: ["result": result])
+        var err: String?
+        engine.onJSError = { err = $0 }
+        let v = engine.evalJS(js, result: info, extra: ["result": info, "isLongClick": isLongClick])
+        if let e = err { throw YueDuError.message(e) }
         return v
     }
 
-    /// 保存表单并调用书源的 login() 函数
-    static func login(_ s: BookSource, info: [String: String], logger: DebugLog? = nil) throws {
+    /// 执行 loginUi / viewName 里的 JS，返回字符串
+    static func evalUi(_ s: BookSource, _ code: String, info: [String: String], callback: LoginUICallback? = nil) throws -> String {
+        let v = try exec(s, code, info: info, callback: callback)
+        // 脚本直接返回数组/对象时转成 JSON（stringify 对数组是按行拼接）
+        if let v = v, !(v is String), JSONSerialization.isValidJSONObject(v),
+           let d = try? JSONSerialization.data(withJSONObject: v), let str = String(data: d, encoding: .utf8) { return str }
+        return JSEngine.stringify(v)
+    }
+
+    /// 保存表单填写内容（loginInfo，存钥匙串）
+    @discardableResult
+    static func saveInfo(_ s: BookSource, _ info: [String: String]) -> Bool {
+        if info.isEmpty { LoginStore.removeLoginInfo(s.bookSourceUrl); return true }
+        guard let d = try? JSONSerialization.data(withJSONObject: info), let str = String(data: d, encoding: .utf8) else { return false }
+        return LoginStore.putLoginInfo(s.bookSourceUrl, str)
+    }
+
+    /// 保存表单并调用书源的 login() 函数（对应 Legado BaseSource.login）
+    static func login(_ s: BookSource, info: [String: String], callback: LoginUICallback? = nil, logger: DebugLog? = nil) throws {
         if let d = try? JSONSerialization.data(withJSONObject: info), let str = String(data: d, encoding: .utf8) {
             _ = LoginStore.putLoginInfo(s.bookSourceUrl, str)
         }
-        guard let lj = loginJs(s) else { return }
-        let js = """
-        if (typeof result === 'object') __jmap(result);
-        \(lj)
-        if (typeof login == 'function') { login.apply(this); } else { throw('书源没有实现 login 函数'); }
-        """
-        let engine = RuleEngine(source: s, logger: logger)
-        engine.setContent("", baseUrl: s.bookSourceUrl)
-        engine.onJSError = { msg in engine.lastError = msg }
-        _ = engine.evalJS(js, result: info, extra: ["result": info])
-        if let e = engine.lastError { throw YueDuError.message(e) }
+        guard loginJs(s) != nil else { return }
+        _ = try exec(s, "if (typeof login == 'function') { login.apply(this); } else { throw('书源没有实现 login 函数'); }",
+                     info: info, callback: callback, logger: logger)
     }
 
     /// 表单里按钮的动作：网址则打开，否则执行 JS
-    static func buttonAction(_ s: BookSource, action: String, info: [String: String], logger: DebugLog? = nil) throws -> Any? {
-        let js = "if (typeof result === 'object') __jmap(result);\n" + (loginJs(s) ?? "") + "\n" + action
-        let engine = RuleEngine(source: s, logger: logger)
-        engine.setContent("", baseUrl: s.bookSourceUrl)
-        engine.onJSError = { msg in engine.lastError = msg }
-        let v = engine.evalJS(js, result: info, extra: ["result": info])
-        if let e = engine.lastError { throw YueDuError.message(e) }
-        return v
+    static func buttonAction(_ s: BookSource, action: String, info: [String: String], isLongClick: Bool = false,
+                             callback: LoginUICallback? = nil, logger: DebugLog? = nil) throws -> Any? {
+        try exec(s, action, info: info, isLongClick: isLongClick, callback: callback, logger: logger)
     }
 
     /// 请求完成后执行 loginCheckJs（书源用它检测登录是否失效、必要时自动重新登录）

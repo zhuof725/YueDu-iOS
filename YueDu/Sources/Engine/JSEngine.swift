@@ -2,6 +2,9 @@ import Foundation
 import JavaScriptCore
 import CryptoKit
 import SwiftSoup
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// JavaScript 引擎 —— 用 iOS 自带的 JavaScriptCore 执行书源里的 @js: / {{ }} / <js></js>
 final class JSEngine {
@@ -154,6 +157,17 @@ final class JSEngine {
     func createSymmetricCrypto(_ transformation: String, _ key: Any, _ iv: Any?) -> SymmetricCryptoBridge
     func webView(_ html: String?, _ url: String?, _ js: String?) -> String
     func startBrowserAwait(_ url: String, _ title: String) -> Any
+    func startBrowser(_ url: String, _ title: String)
+    func showBrowser(_ url: String, _ html: String?, _ preloadJs: String?, _ config: String?)
+    func openUrl(_ url: String)
+    func upLoginData(_ data: Any?)
+    func reLoginView(_ deltaUp: Bool)
+    func refreshExplore()
+    func refreshBookInfo()
+    func refreshBookToc()
+    func refreshContent()
+    func copyText(_ text: String)
+    func getLoginInfoMapJSON() -> String
     func downloadFile(_ url: String) -> String
     func importScript(_ path: String) -> String
     func cacheFile(_ url: String) -> String
@@ -227,7 +241,11 @@ final class JSEngine {
 
     func log(_ msg: Any?) -> Any? { engine?.log("JS: \(JSEngine.stringify(msg))"); return msg }
     func logType(_ o: Any?) { engine?.log("type: \(type(of: o as Any))") }
-    func toast(_ msg: Any?) { engine?.log("toast: \(JSEngine.stringify(msg))") }
+    func toast(_ msg: Any?) {
+        let m = JSEngine.stringify(msg)
+        engine?.log("toast: \(m)")
+        if let cb = engine?.loginCallback { cb.toast(m) } else { AppToast.handler?(m) }
+    }
     func longToast(_ msg: Any?) { toast(msg) }
 
     func md5Encode(_ s: String) -> String { Util.md5(s) }
@@ -317,6 +335,39 @@ final class JSEngine {
         return ResponseBridge(HTTPResponse(url: url, body: "", data: Data(), code: 0, headers: [:]))
         #endif
     }
+    private func clean(_ s: String?) -> String? {
+        guard let s = s, s != "undefined", s != "null", !s.isEmpty else { return nil }
+        return s
+    }
+    func startBrowser(_ url: String, _ title: String) {
+        let abs = Util.absoluteURL(source?.bookSourceUrl, url)
+        if let cb = engine?.loginCallback { cb.openBrowser(abs, title: clean(title) ?? "") }
+        else {
+            #if canImport(UIKit)
+            let h = source?.headerMap() ?? [:]
+            DispatchQueue.global().async { _ = BrowserPresenter.presentAndWait(url: abs, title: title, headers: h) }
+            #endif
+        }
+    }
+    func showBrowser(_ url: String, _ html: String?, _ preloadJs: String?, _ config: String?) { startBrowser(url, "") }
+    func openUrl(_ url: String) { startBrowser(url, "") }
+    func upLoginData(_ data: Any?) {
+        guard let cb = engine?.loginCallback else { return }
+        if let d = data as? [String: Any] { cb.upLoginData(d) }
+        else if let s = data as? String, let o = BookSourceImporter.parseJSONLoose(s) as? [String: Any] { cb.upLoginData(o) }
+        else { cb.upLoginData(nil) }
+    }
+    func reLoginView(_ deltaUp: Bool) { engine?.loginCallback?.reLoginView(deltaUp) }
+    func refreshExplore() { engine?.loginCallback?.reLoginView(false) }
+    func refreshBookInfo() {}
+    func refreshBookToc() {}
+    func refreshContent() {}
+    func copyText(_ text: String) {
+        #if canImport(UIKit)
+        DispatchQueue.main.async { UIPasteboard.general.string = text }
+        #endif
+    }
+    func getLoginInfoMapJSON() -> String { LoginStore.loginInfo(source?.bookSourceUrl ?? "") ?? "{}" }
     func downloadFile(_ url: String) -> String { "" }
     func importScript(_ path: String) -> String {
         let u = Util.absoluteURL(source?.bookSourceUrl, path)
