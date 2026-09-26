@@ -128,7 +128,7 @@ struct SourceLoginView: View {
                 BrowserPresenter.presentAndWait(url: abs, title: row.label, headers: source.headerMap())
                 loadState()
             } else {
-                let v = try SourceLogin.buttonAction(source, action: action, info: values) { msg in message = msg }
+                let v = try SourceLogin.buttonAction(source, action: action, info: values)
                 let s = JSEngine.stringify(v)
                 if !s.isEmpty { message = s }
                 loadState()
@@ -142,7 +142,7 @@ struct SourceLoginView: View {
         working = true; message = nil
         defer { working = false }
         do {
-            try SourceLogin.login(source, info: values) { msg in message = msg }
+            try SourceLogin.login(source, info: values)
             // 登录脚本可能改了登录头，刷新状态
             loadState()
             message = isLoggedIn ? "成功：已登录" : "已保存账号信息"
