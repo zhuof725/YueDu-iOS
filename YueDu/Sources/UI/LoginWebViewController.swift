@@ -43,7 +43,20 @@ final class LoginWebViewController: UIViewController, WKNavigationDelegate, WKUI
             title: "取消", style: .plain, target: self, action: #selector(closeTapped))
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "完成", style: .done, target: self, action: #selector(closeTapped))
-        if let u = URL(string: url) ?? URL(string: Util.encodeLoose(url)) {
+        if url.lowercased().hasPrefix("data:") {
+            // data:text/html;base64,xxx（书源用来展示一段网页，比如「复制 Tag」）
+            if let comma = url.firstIndex(of: ",") {
+                let meta = url[..<comma].lowercased()
+                let payload = String(url[url.index(after: comma)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let html: String
+                if meta.contains(";base64") {
+                    html = Data(base64Encoded: payload, options: .ignoreUnknownCharacters).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                } else {
+                    html = payload.removingPercentEncoding ?? payload
+                }
+                webView.loadHTMLString(html, baseURL: nil)
+            }
+        } else if let u = URL(string: url) ?? URL(string: Util.encodeLoose(url)) {
             var req = URLRequest(url: u)
             if let ua = headers.first(where: { $0.key.lowercased() == "user-agent" })?.value {
                 webView.customUserAgent = ua
@@ -88,5 +101,20 @@ final class LoginWebViewController: UIViewController, WKNavigationDelegate, WKUI
             webView.load(navigationAction.request)
         }
         return nil
+    }
+}
+
+extension CookieBridge {
+    /// 同时清掉网页里的登录 Cookie，否则再次打开登录页还是已登录状态
+    static func removeWebCookies(_ root: String) {
+        DispatchQueue.main.async {
+            let store = WKWebsiteDataStore.default().httpCookieStore
+            store.getAllCookies { cs in
+                for c in cs {
+                    let d = c.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+                    if d == root || d.hasSuffix("." + root) { store.delete(c) }
+                }
+            }
+        }
     }
 }

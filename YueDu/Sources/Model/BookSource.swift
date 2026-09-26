@@ -50,14 +50,20 @@ struct BookSource: Codable, Identifiable, Hashable {
         }
         var map: [String: String] = [:]
         if h.hasPrefix("@js:") || h.lowercased().hasPrefix("<js>") {
-            let js = h.hasPrefix("@js:") ? String(h.dropFirst(4)) : h
-                .replacingOccurrences(of: "<js>", with: "").replacingOccurrences(of: "</js>", with: "")
-            if let r = JSEngine.shared.eval(js, bindings: ["source": bookSourceUrl]) as? [String: Any] {
-                for (k, v) in r { map[k] = "\(v)" }
-            } else if let s = JSEngine.shared.eval(js, bindings: [:]) as? String,
-                      let d = s.data(using: .utf8),
-                      let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
-                for (k, v) in o { map[k] = "\(v)" }
+            var js = h
+            if js.hasPrefix("@js:") { js = String(js.dropFirst(4)) }
+            else {
+                js = String(js.dropFirst(4))
+                if let r = js.range(of: "</js>", options: [.caseInsensitive, .backwards]) { js = String(js[..<r.lowerBound]) }
+            }
+            // 用完整的书源环境执行（header 脚本常用 source.getLoginInfoMap() 取 Token）
+            let engine = RuleEngine(source: self)
+            engine.setContent("", baseUrl: bookSourceUrl)
+            let r = engine.evalJS(js, result: nil)
+            if let o = r as? [String: Any] {
+                for (k, v) in o { map[k] = JSEngine.stringify(v) }
+            } else if let s = r as? String, let o = BookSourceImporter.parseJSONLoose(s) as? [String: Any] {
+                for (k, v) in o { map[k] = JSEngine.stringify(v) }
             }
         } else if let d = h.data(using: .utf8),
                   let o = (try? JSONSerialization.jsonObject(with: d, options: [.fragmentsAllowed])) as? [String: Any] {

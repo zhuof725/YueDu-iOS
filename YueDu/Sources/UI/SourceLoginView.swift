@@ -232,11 +232,11 @@ struct SourceLoginView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if model.loading { ProgressView().frame(maxWidth: .infinity) }
                     if let e = model.uiError { Text(e).font(.footnote).foregroundColor(.orange) }
-                    FlexLayout {
+                    FlexLayout(spacing: 12, lineSpacing: 12) {
                         ForEach(model.rows) { r in rowView(r) }
                     }
                     if !model.hasUi {
-                        Text("该书源没有登录界面，点右上角 ✓ 执行书源的登录脚本。").font(.footnote).foregroundColor(.secondary)
+                        Text("该书源没有登录界面（loginUi），点右上角「确认」执行书源的登录脚本。\n如果这个书源本来有登录按钮，请重新导入一次书源（旧版本导入时没有保存登录界面）。").font(.footnote).foregroundColor(.secondary)
                     }
                     if let h = model.headerText, !h.isEmpty {
                         Label("已登录", systemImage: "checkmark.shield").font(.footnote).foregroundColor(.green)
@@ -244,7 +244,7 @@ struct SourceLoginView: View {
                 }
                 .padding()
             }
-            .navigationTitle("登录：\(source.bookSourceName)")
+            .navigationTitle("登录 - \(source.bookSourceName)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -263,8 +263,7 @@ struct SourceLoginView: View {
                         } label: { Image(systemName: "ellipsis.circle") }
                         if model.working { ProgressView() }
                         else {
-                            Button { model.login { dismiss() } } label: { Image(systemName: "checkmark") }
-                                .accessibilityLabel("登录")
+                            Button("确认") { model.login { dismiss() } }.font(.body.weight(.semibold))
                         }
                     }
                 }
@@ -291,15 +290,15 @@ struct SourceLoginView: View {
             let b = Binding(get: { model.values[r.name] ?? "" },
                             set: { model.values[r.name] = $0; model.textChanged(r) })
             VStack(alignment: .leading, spacing: 3) {
-                Text(model.label(r)).font(.caption).foregroundColor(.secondary)
                 Group {
                     if r.type == "password" { SecureField(model.label(r), text: b) }
                     else { TextField(model.label(r), text: b) }
                 }
                 .multilineTextAlignment(r.style.justifySelf == "center" ? .center : r.style.justifySelf == "flex_end" ? .trailing : .leading)
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
-                .padding(10)
-                .background(Color(.secondarySystemBackground)).cornerRadius(8)
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .background(RoundedRectangle(cornerRadius: 22).fill(Color(.systemBackground).opacity(0.7)))
+                .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color(.separator), lineWidth: 0.6))
             }
             .flexStyle(r.style, fullWidth: true)
         case "select":
@@ -336,12 +335,13 @@ struct FilletButton: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 14))
+            .font(.system(size: 16))
+            .foregroundColor(.accentColor)
             .lineLimit(1)
-            .padding(.horizontal, 12).padding(.vertical, 6)
+            .padding(.horizontal, 16).padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: justify == "flex_start" ? .leading : justify == "flex_end" ? .trailing : .center)
-            .background(RoundedRectangle(cornerRadius: 16).fill(Color.accentColor.opacity(pressed ? 0.28 : 0.12)))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.accentColor.opacity(0.5), lineWidth: 0.8))
+            .background(RoundedRectangle(cornerRadius: 22).fill(pressed ? Color.accentColor.opacity(0.15) : Color(.systemBackground).opacity(0.7)))
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color(.separator), lineWidth: 0.6))
             .fixedSize(horizontal: justify == "auto", vertical: false)
             .scaleEffect(pressed ? 0.96 : 1)
             .contentShape(Rectangle())

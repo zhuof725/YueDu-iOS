@@ -290,8 +290,7 @@ final class JSEngine {
     func getVar(_ k: String) -> String { engine?.get(k) ?? "" }
 
     func getCookie(_ tag: String, _ key: String?) -> String {
-        guard let u = URL(string: tag) else { return "" }
-        let cs = HTTPCookieStorage.shared.cookies(for: u) ?? []
+        let cs = CookieBridge.cookies(tag)
         if let k = key, !k.isEmpty { return cs.first { $0.name == k }?.value ?? "" }
         return cs.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
     }
@@ -456,27 +455,63 @@ final class JSEngine {
     func removeCookie(_ url: String)
 }
 @objc final class CookieBridge: NSObject, CookieBridgeExports {
+    /// 书源常写 cookie.getCookie("qidian.com")（没有 http://），这里统一取出主机名
+    static func host(_ url: String) -> String? {
+        var t = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { return nil }
+        if !t.lowercased().hasPrefix("http") { t = "https://" + t }
+        if let r = t.range(of: #"\s*,\s*\{"#, options: .regularExpression) { t = String(t[..<r.lowerBound]) }
+        return (URL(string: t) ?? URL(string: Util.encodeLoose(t)))?.host?.lowercased()
+    }
+    /// 该主机能用到的 Cookie（包括 .qidian.com、www.qidian.com 等同一站点的）
+    static func cookies(_ url: String) -> [HTTPCookie] {
+        guard let h = host(url) else { return [] }
+        let parts = h.split(separator: ".")
+        let root = parts.count >= 2 && Int(parts.last!) == nil ? parts.suffix(2).joined(separator: ".") : h
+        var seen = Set<String>()
+        var out: [HTTPCookie] = []
+        // 精确匹配的优先
+        let all = (HTTPCookieStorage.shared.cookies ?? []).sorted { a, b in
+            let da = a.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+            let db = b.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+            return (da == h ? 0 : 1) < (db == h ? 0 : 1)
+        }
+        for c in all {
+            if let e = c.expiresDate, e < Date() { continue }
+            let d = c.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+            guard d == h || h.hasSuffix("." + d) || d == root || d.hasSuffix("." + root) else { continue }
+            if seen.insert(c.name).inserted { out.append(c) }
+        }
+        return out
+    }
     func getCookie(_ url: String) -> String {
-        guard let u = URL(string: url) else { return "" }
-        return (HTTPCookieStorage.shared.cookies(for: u) ?? []).map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+        CookieBridge.cookies(url).map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
     }
     func getKey(_ url: String, _ key: String) -> String {
-        guard let u = URL(string: url) else { return "" }
-        return HTTPCookieStorage.shared.cookies(for: u)?.first { $0.name == key }?.value ?? ""
+        CookieBridge.cookies(url).first { $0.name == key }?.value ?? ""
     }
     func setCookie(_ url: String, _ cookie: String) {
-        guard let u = URL(string: url), let host = u.host else { return }
+        guard let host = CookieBridge.host(url) else { return }
         for pair in cookie.components(separatedBy: ";") {
             let kv = pair.trimmingCharacters(in: .whitespaces).split(separator: "=", maxSplits: 1)
             guard kv.count == 2 else { continue }
-            if let c = HTTPCookie(properties: [.name: String(kv[0]), .value: String(kv[1]), .domain: host, .path: "/"]) {
+            if let c = HTTPCookie(properties: [.name: String(kv[0]), .value: String(kv[1]), .domain: host, .path: "/",
+                                               .expires: Date().addingTimeInterval(3600 * 24 * 365)]) {
                 HTTPCookieStorage.shared.setCookie(c)
             }
         }
     }
     func removeCookie(_ url: String) {
-        guard let u = URL(string: url) else { return }
-        HTTPCookieStorage.shared.cookies(for: u)?.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+        guard let h = CookieBridge.host(url) else { return }
+        let parts = h.split(separator: ".")
+        let root = parts.count >= 2 ? parts.suffix(2).joined(separator: ".") : h
+        for c in HTTPCookieStorage.shared.cookies ?? [] {
+            let d = c.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+            if d == root || d.hasSuffix("." + root) { HTTPCookieStorage.shared.deleteCookie(c) }
+        }
+        #if canImport(WebKit) && canImport(UIKit)
+        CookieBridge.removeWebCookies(root)
+        #endif
     }
 }
 

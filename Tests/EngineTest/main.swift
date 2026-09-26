@@ -172,7 +172,7 @@ check("导入 header 对象", imported.first?.headerMap()["User-Agent"] ?? "", "
 
 // ── 真实书源文件（从 GitHub 下载的 Legado 书源）
 let samplesDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("samples")
-let sampleFiles = ((try? FileManager.default.contentsOfDirectory(atPath: samplesDir.path)) ?? []).sorted()
+let sampleFiles = ((try? FileManager.default.contentsOfDirectory(atPath: samplesDir.path)) ?? []).filter { $0.hasPrefix("real") }.sorted()
 check("真实书源 样本文件数", "\(sampleFiles.count)", "5")
 for f in sampleFiles {
     let d = (try? Data(contentsOf: samplesDir.appendingPathComponent(f))) ?? Data()
@@ -185,6 +185,29 @@ for f in sampleFiles {
     } catch {
         check("真实书源 \(f) 导入有效条目", expected == 0 ? "0" : "错误: \(error.localizedDescription)", "\(expected)")
     }
+}
+
+// ── 用户提供的「起点小说（qimo）」：只有按钮的登录界面、login 脚本无 @js: 前缀、header 用 <js> 取 Token
+if let qd = try? Data(contentsOf: samplesDir.appendingPathComponent("qimo.json")),
+   let q = try? BookSourceImporter.parseReport(BookSourceImporter.text(from: qd)).sources.first {
+    let qr = SourceLogin.rows(q)
+    check("起点 登录界面行数", "\(qr.count)", "7")
+    check("起点 按钮名", qr.prefix(6).map(\.name).joined(separator: ","), "登录起点,重新上传,查看登录状态,前往复制最新 Tag,退出登录,清除数据")
+    check("起点 Token 输入框", qr.last?.type ?? "", "password")
+    check("起点 登录脚本识别", "\(SourceLogin.loginJs(q) != nil)", "true")
+    let qcb = TestLoginCB()
+    _ = try? SourceLogin.buttonAction(q, action: "checkLoginStatus()", info: [:], callback: qcb)
+    check("起点 查看登录状态(未登录)", qcb.toasts.first ?? "", "未登录，请先「登录起点」")
+    CookieBridge().setCookie("https://www.qidian.com", "ywkey=K1; ywguid=G1")
+    let qcb2 = TestLoginCB()
+    _ = try? SourceLogin.buttonAction(q, action: "checkLoginStatus()", info: [:], callback: qcb2)
+    check("起点 cookie.getCookie(无协议域名)", qcb2.toasts.first ?? "", "已登录")
+    _ = try? SourceLogin.buttonAction(q, action: "logout()", info: [:], callback: qcb2)
+    check("起点 退出登录清 Cookie", CookieBridge().getCookie("qidian.com"), "")
+    _ = SourceLogin.saveInfo(q, ["Token": "T0K"])
+    check("起点 header 脚本带 Token", q.headerMap()["Authorization"] ?? "", "Bearer T0K")
+} else {
+    check("起点 书源读取", "失败", "成功")
 }
 
 // ── 导入容错
