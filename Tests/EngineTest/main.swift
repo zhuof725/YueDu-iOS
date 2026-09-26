@@ -208,7 +208,7 @@ check("链接 提取 夹杂文字", BookSourceImporter.extractURL("书源地址�
 // ── 登录
 let loginSource = BookSource(bookSourceUrl: "https://login.test.com", bookSourceName: "登录测试",
     loginUrl: "@js:function login(){ java.ajax(\"https://login.test.com/api/login?u=\"+encodeURIComponent(result.username)+\"&p=\"+encodeURIComponent(result.password)); source.putLoginHeader({token:'abc123'}); }",
-    loginUi: \"[{\\\"name\\\":\\\"username\\\",\\\"type\\\":\\\"text\\\"},{\\\"name\\\":\\\"password\\\",\\\"type\\\":\\\"password\\\"},{\\\"name\\\":\\\"login\\\",\\\"type\\\":\\\"button\\\",\\\"action\\\":\\\"login.apply(this)\\\"}]\")
+    loginUi: "[{\"name\":\"username\",\"type\":\"text\"},{\"name\":\"password\",\"type\":\"password\"},{\"name\":\"login\",\"type\":\"button\",\"action\":\"login.apply(this)\"}]")
 check("登录 表单行数", "\(SourceLogin.rows(loginSource).count)", "3")
 check("登录 表单字段", SourceLogin.rows(loginSource).map(\.name).joined(separator: ","), "username,password,login")
 try? SourceLogin.login(loginSource, info: ["username": "u1", "password": "p1"])
