@@ -1,0 +1,104 @@
+[
+    {
+        "bookSourceComment": "",
+        "bookSourceGroup": "💖CandyMuj",
+        "bookSourceName": "💖万相书城",
+        "bookSourceType": 0,
+        "bookSourceUrl": "https://www.wxscs.com",
+        "customOrder": -24274,
+        "enabled": true,
+        "enabledCookieJar": false,
+        "enabledExplore": true,
+        "enabledReview": false,
+        "exploreUrl": "[{\"title\":\"༺ˇ»`ʚ玄幻·奇幻ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/xuanhuan.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/xuanhuan_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"༺ˇ»`ʚ仙侠·武侠ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/xianxia.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/xianxia_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"༺ˇ»`ʚ都市·娱乐ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/dushi.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/dushi_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"༺ˇ»`ʚ历史·军事ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/lishi.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/lishi_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"༺ˇ»`ʚ科幻·游戏ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/kehuan.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/kehuan_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"༺ˇ»`ʚ恐怖·悬疑ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/kongbu.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/kongbu_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"༺ˇ»`ʚ耽美·纯爱ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/chunai.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/chunai_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"༺ˇ»`ʚ女生·言情ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/yanqing.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/yanqing_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"༺ˇ»`ʚ轻小说ɞ´«ˇ༻\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},{\"title\":\"热门\",\"url\":\"/nav/erciyuan.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}},{\"title\":\"所有\",\"url\":\"/nav/erciyuan_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.2}}]",
+        "header": "{\n  \"User-Agent\": \"Mozilla/5.0 (Linux; Android 13; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36\"\n}",
+        "lastUpdateTime": 1722913750026,
+        "respondTime": 180000,
+        "ruleBookInfo": {
+            "author": "[property$=author]@content",
+            "coverUrl": "[property$=image]@content\n@js:\nsource.getKey() + result",
+            "intro": "[property$=description]@content",
+            "kind": "[property~=category|status|update_time]@content##\\s.*",
+            "lastChapter": "{{@@[property$=chapter_name]@content}}･{{@@[property$=update_time]@content##\\s.*}}\n@js:result\n.replace(\"••\",\"\")\n.replace(/^(\\d+).第/,'第')\n.replace(/^(正文|VIP章节|最新章节)?(\\s+|_)|[\\(\\{（｛【].*[求更谢乐发推票盟补加字Kk\\/].*[\\)\\}）｝】]/g,'')\n.replace(/^(\\d+)[、．]第.+章/,'第$1章')\n.replace(/^(\\d+)、\\d+、/,'第$1章 ')\n.replace(/^(\\d+)、\\d+/,'第$1章')\n.replace(/^(第.+章)\\s?\\d+/,'$1')\n.replace(/^(\\d+)、/,'第$1章 ')\n.replace(/^(第.+章)\\s?第.+章/,'$1')\n.replace(/第\\s(.+)\\s章/,'第$1章')\n.replace(/.*(chapter|Chapter)\\s?(\\d+)\\s?/,'$1 $2 ')\n.replace(/\\(.+\\)/,'')\n.replace(/\\[|。/,'')\n.replace(/第([零一二三四五六七八九十百千]+)章/g,java.toNumChapter(result))\n##(章)([^\\s]+)(\\s·)##$1 $2$3",
+            "name": "[property$=book_name]@content",
+            "tocUrl": "{{baseUrl}}"
+        },
+        "ruleContent": {
+            "content": "#cont-body@html",
+            "nextContentUrl": "//i[contains(@class, 'fa fa-arrow-circle-right')]/ancestor::a[1]/@href",
+            "replaceRegex": ""
+        },
+        "ruleExplore": {
+            "author": "td.2@text",
+            "bookList": "@js:\norg.jsoup.Jsoup.parse(src).select('table tbody tr:has(td),.col-left .panel-body .row>div')",
+            "bookUrl": "a.0@href",
+            "coverUrl": ".media-left img@src\n@js:\nsource.getKey() + result",
+            "intro": ".media-info@text",
+            "name": "@js:\nlet html = org.jsoup.Jsoup.parse(src)\nlet title = html.select(\"a\").prev().attr(\"title\")\nif (title == null || title == \"\") {\ntitle = html.select(\".media-title a\").text()\n}\ntitle"
+        },
+        "ruleSearch": {
+            "author": "td.1@text",
+            "bookList": "table tbody tr",
+            "bookUrl": "td a.0@href",
+            "checkKeyWord": "万相之王",
+            "name": "td a.0@title"
+        },
+        "ruleToc": {
+            "chapterList": "#all-chapter .panel-body div.item a",
+            "chapterName": "text\n@js:result\n.replace(\"••\",\"\")\n.replace(/^(\\d+).第/,'第')\n.replace(/^(正文|VIP章节|最新章节)?(\\s+|_)|[\\(\\{（｛【].*[求更谢乐发推票盟补加字Kk\\/].*[\\)\\}）｝】]/g,'')\n.replace(/^(\\d+)[、．]第.+章/,'第$1章')\n.replace(/^(\\d+)、\\d+、/,'第$1章 ')\n.replace(/^(\\d+)、\\d+/,'第$1章')\n.replace(/^(第.+章)\\s?\\d+/,'$1')\n.replace(/^(\\d+)、/,'第$1章 ')\n.replace(/^(第.+章)\\s?第.+章/,'$1')\n.replace(/第\\s(.+)\\s章/,'第$1章')\n.replace(/.*(chapter|Chapter)\\s?(\\d+)\\s?/,'$1 $2 ')\n.replace(/\\(.+\\)/,'')\n.replace(/\\[|。/,'')\n.replace(/第([零一二三四五六七八九十百千]+)章/g,java.toNumChapter(result))\n##(章)([^\\s]+)(\\s·)##$1 $2$3",
+            "chapterUrl": "href\n@js:\nsource.getKey() + result"
+        },
+        "searchUrl": "/plus/search.php?q={{key}}",
+        "weight": 0
+    },
+    {
+        "bookSourceComment": "",
+        "bookSourceGroup": "💖CandyMuj",
+        "bookSourceName": "💖妙味书屋",
+        "bookSourceType": 0,
+        "bookSourceUrl": "https://www.tangsanbooks.com",
+        "customOrder": 0,
+        "enabled": true,
+        "enabledCookieJar": false,
+        "enabledExplore": true,
+        "enabledReview": false,
+        "exploreUrl": "[{\"title\":\"全部小说\",\"url\":\"/all\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}}]",
+        "header": "{\n  \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36\"\n}",
+        "lastUpdateTime": 1727668097557,
+        "respondTime": 180000,
+        "ruleExplore": {
+            "bookList": "ul.nine-list a",
+            "name": "text\n@js:\nresult.split(\"/\")[0]",
+            "author": "span@text\n@js:\nresult.split(\"/\")[1]",
+            "bookUrl": "@href"
+        },
+        "ruleToc": {
+            "chapterList": "div.list.category-list li a",
+            "chapterName": "@title",
+            "chapterUrl": "@href"
+        },
+        "weight": 0,
+        "ruleBookInfo": {
+            "name": "div.book-title h1@text",
+            "author": "div.book-title span@text\n@js:\nresult##作者：",
+            "coverUrl": "div.book-info .book-image img@src",
+            "tocUrl": "",
+            "intro": "div.book-des .cate-desc@text",
+            "lastChapter": "div.book-des .col-half a@text\n@js:\nresult.replace(book.name,'')",
+            "kind": "//div[@class='book-des']//div[(@class='col-half') and contains(text(), '更新时间')]//text()\n@js:\nresult##更新时间："
+        },
+        "ruleContent": {
+            "content": "div.article-box .detailinfo .ui-tabs-panel p@text",
+            "nextContentUrl": "#page-links a@href",
+            "replaceRegex": "##本章完.*"
+        },
+        "searchUrl": "/all",
+        "ruleSearch": {
+            "checkKeyWord": "万相之王",
+            "bookList": "ul.nine-list a\n@js:\nlet arr=[]\nfor(i in result){\nlet item = result[i]\nlet bname = item.text().split(\"/\")[0]\nif(bname .indexOf(\"万相之王\") === -1) continue\narr.push(item)\n}\narr",
+            "name": "text\n@js:\nresult.split(\"/\")[0]",
+            "author": "span@text\n@js:\nresult.split(\"/\")[1]",
+            "bookUrl": "@href"
+        }
+    }
+]

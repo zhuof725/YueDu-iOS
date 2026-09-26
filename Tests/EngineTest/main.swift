@@ -170,6 +170,39 @@ check("导入 数字型布尔", "\(imported.first?.isEnabled ?? false)", "true")
 check("导入 规则数字转字符串", imported.first?.ruleSearch?.checkKeyWord ?? "", "123")
 check("导入 header 对象", imported.first?.headerMap()["User-Agent"] ?? "", "X")
 
+// ── 真实书源文件（从 GitHub 下载的 Legado 书源）
+let samplesDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("samples")
+let sampleFiles = ((try? FileManager.default.contentsOfDirectory(atPath: samplesDir.path)) ?? []).sorted()
+check("真实书源 样本文件数", "\(sampleFiles.count)", "5")
+for f in sampleFiles {
+    let d = (try? Data(contentsOf: samplesDir.appendingPathComponent(f))) ?? Data()
+    let expected = ((try? JSONSerialization.jsonObject(with: d)) as? [Any])?.count ?? -1
+    do {
+        let r = try BookSourceImporter.parseReport(BookSourceImporter.text(from: d))
+        check("真实书源 \(f) 全部导入", "\(r.sources.count)", "\(expected)")
+    } catch {
+        check("真实书源 \(f) 全部导入", "错误: \(error.localizedDescription)", "\(expected)")
+    }
+}
+
+// ── 导入容错
+func importCount(_ s: String) -> String {
+    do { return "\((try BookSourceImporter.parseReport(s)).sources.count)" } catch { return "错误" }
+}
+check("导入 带 BOM", importCount(BookSourceImporter.text(from: Data("\u{FEFF}[{\"bookSourceUrl\":\"https://a.com\",\"bookSourceName\":\"A\"}]".utf8))), "1")
+check("导入 单个对象", importCount("{\"bookSourceUrl\":\"https://a.com\",\"bookSourceName\":\"A\"}"), "1")
+check("导入 尾逗号", importCount("[{\"bookSourceUrl\":\"https://a.com\",\"bookSourceName\":\"A\",},]"), "1")
+check("导入 规则是字符串 JSON", importCount("[{\"bookSourceUrl\":\"https://a.com\",\"bookSourceName\":\"A\",\"ruleSearch\":\"{\\\"name\\\":\\\"x\\\"}\"}]"), "1")
+check("导入 规则是数组", importCount("[{\"bookSourceUrl\":\"https://a.com\",\"bookSourceName\":\"A\",\"ruleToc\":[]}]"), "1")
+check("导入 null 字段", importCount("[{\"bookSourceUrl\":\"https://a.com\",\"bookSourceName\":\"A\",\"header\":null,\"weight\":null}]"), "1")
+check("导入 数字小数", importCount("[{\"bookSourceUrl\":\"https://a.com\",\"bookSourceName\":\"A\",\"weight\":1.5,\"customOrder\":\"3\"}]"), "1")
+check("导入 包在 data 里", importCount("{\"data\":[{\"bookSourceUrl\":\"https://a.com\",\"bookSourceName\":\"A\"}]}"), "1")
+check("导入 缺名称用网址", (try? BookSourceImporter.parseReport("[{\"bookSourceUrl\":\"https://a.com\"}]"))?.sources.first?.bookSourceName ?? "", "https://a.com")
+check("导入 不是 JSON 给出原因", { do { _ = try BookSourceImporter.parseReport("<html>"); return "无错误" } catch { return error.localizedDescription.hasPrefix("内容不是 JSON") ? "ok" : error.localizedDescription } }(), "ok")
+check("导入 RSS 源提示", { do { _ = try BookSourceImporter.parseReport("[{\"sourceUrl\":\"https://a.com\",\"sourceName\":\"A\"}]"); return "无错误" } catch { return error.localizedDescription.contains("订阅源") ? "ok" : error.localizedDescription } }(), "ok")
+check("链接 提取 legado://", BookSourceImporter.extractURL("legado://import/bookSource?src=https%3A%2F%2Fa.com%2Fs.json") ?? "", "https://a.com/s.json")
+check("链接 提取 夹杂文字", BookSourceImporter.extractURL("书源地址：https://a.com/s.json 复制打开") ?? "", "https://a.com/s.json")
+
 // ── 加解密
 let aes = SymmetricCryptoBridge("AES/CBC/PKCS5Padding", Data("1234567890123456".utf8), Data("abcdefghijklmnop".utf8))
 let enc = aes.encryptBase64("你好世界")

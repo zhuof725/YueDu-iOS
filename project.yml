@@ -6,8 +6,8 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "0.2.0"
-    CURRENT_PROJECT_VERSION: "2"
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "3"
     SWIFT_VERSION: "5.0"
 packages:
   SwiftSoup:
@@ -73,6 +73,8 @@ targets:
     deploymentTarget: "13.0"
     sources:
       - path: Tests/EngineTest
+        excludes:
+          - samples
       - path: YueDu/Sources/Engine
       - path: YueDu/Sources/Rule
       - path: YueDu/Sources/Model/Book.swift

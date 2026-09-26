@@ -119,63 +119,129 @@ struct ContentRule: Codable, Hashable {
 
 // MARK: - 导入
 
+struct ImportReport {
+    var sources: [BookSource] = []
+    var skipped: [String] = []     // 跳过的条目及原因
+}
+
 enum BookSourceImporter {
-    /// 兼容：单个对象 / 数组 / 数字型布尔等宽松格式
-    static func parse(_ data: Data) throws -> [BookSource] {
-        let decoder = JSONDecoder()
-        // 先尝试数组
-        if let list = try? decoder.decode([LenientSource].self, from: data) {
-            return list.compactMap { $0.source }
-        }
-        if let one = try? decoder.decode(LenientSource.self, from: data), let s = one.source {
-            return [s]
-        }
-        throw NSError(domain: "YueDu", code: 1,
-                      userInfo: [NSLocalizedDescriptionKey: "不是有效的书源 JSON"])
+    private static let intKeys: Set<String> = ["bookSourceType", "weight", "customOrder"]
+    private static let doubleKeys: Set<String> = ["lastUpdateTime", "respondTime"]
+    private static let boolKeys: Set<String> = ["enabled", "enabledExplore", "enabledCookieJar"]
+    private static let ruleKeys: Set<String> = ["ruleSearch", "ruleExplore", "ruleBookInfo", "ruleToc", "ruleContent"]
+    private static let stringKeys: [String] = ["bookSourceUrl", "bookSourceName", "bookSourceGroup", "bookSourceComment",
+        "header", "loginUrl", "bookUrlPattern", "searchUrl", "exploreUrl", "jsLib", "concurrentRate", "variableComment"]
+
+    /// 字节 → 文本（兼容 UTF-8 BOM、GBK 编码的 txt）
+    static func text(from data: Data) -> String {
+        var s = String(data: data, encoding: .utf8) ?? String(data: data, encoding: Util.gbk) ?? String(decoding: data, as: UTF8.self)
+        if s.hasPrefix("\u{FEFF}") { s.removeFirst() }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 宽松解码：各字段类型不严格（比如 enabled 可能是 0/1，规则可能是数字）
-    struct LenientSource: Decodable {
-        var source: BookSource?
+    /// 兼容旧接口：解析失败或 0 个时抛出带原因的错误
+    static func parse(_ data: Data) throws -> [BookSource] {
+        let r = try parseReport(text(from: data))
+        return r.sources
+    }
 
-        init(from decoder: Decoder) throws {
-            let c = try decoder.singleValueContainer()
-            let any = try c.decode(AnyCodable.self).value
-            guard var dict = any as? [String: Any] else { return }
-            // 规范化布尔值
-            for key in ["enabled", "enabledExplore", "enabledCookieJar"] {
-                if let v = dict[key] {
-                    if let n = v as? NSNumber { dict[key] = n.boolValue }
-                    else if let s = v as? String { dict[key] = (s == "true" || s == "1") }
-                }
-            }
-            for key in ["bookSourceType", "weight", "customOrder"] {
-                if let s = dict[key] as? String { dict[key] = Int(s) ?? 0 }
-            }
-            // 规则子对象里所有值转成字符串
-            for key in ["ruleSearch", "ruleExplore", "ruleBookInfo", "ruleToc", "ruleContent"] {
-                if var sub = dict[key] as? [String: Any] {
-                    for (k, v) in sub where !(v is String) {
-                        if v is NSNull { sub[k] = nil } else { sub[k] = "\(v)" }
-                    }
-                    dict[key] = sub
-                } else if dict[key] is String {
-                    // 有些书源把规则存成 JSON 字符串
-                    if let s = dict[key] as? String, let d = s.data(using: .utf8),
-                       let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
-                        dict[key] = o
-                    } else { dict[key] = nil }
-                }
-            }
-            if let h = dict["header"], !(h is String) {
-                if let d = try? JSONSerialization.data(withJSONObject: h) {
-                    dict["header"] = String(data: d, encoding: .utf8)
-                }
-            }
-            guard dict["bookSourceUrl"] is String, dict["bookSourceName"] is String else { return }
-            let data = try JSONSerialization.data(withJSONObject: dict)
-            source = try JSONDecoder().decode(BookSource.self, from: data)
+    static func parseReport(_ raw: String) throws -> ImportReport {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { throw YueDuError.message("内容是空的") }
+        guard let root = parseJSONLoose(t) else {
+            throw YueDuError.message("内容不是 JSON。开头是：\n\(preview(t))")
         }
+        var items: [Any] = []
+        if let a = root as? [Any] { items = a }
+        else if let o = root as? [String: Any] {
+            if o["bookSourceUrl"] != nil { items = [o] }
+            else if let a = (o["data"] ?? o["list"] ?? o["sources"] ?? o["bookSources"]) as? [Any] { items = a }
+            else if o["sourceUrl"] != nil && o["sourceName"] != nil {
+                throw YueDuError.message("这是「订阅源 / RSS 源」，不是书源，暂不支持")
+            }
+            else { items = [o] }
+        } else if let s = root as? String, let inner = parseJSONLoose(s) {
+            // 被再包了一层字符串的 JSON
+            return try parseReport(JSONPath.stringify(inner))
+        }
+        var report = ImportReport()
+        for (i, it) in items.enumerated() {
+            guard let d = it as? [String: Any] else { report.skipped.append("第\(i + 1)条：不是对象"); continue }
+            do { report.sources.append(try normalize(d)) }
+            catch { report.skipped.append("第\(i + 1)条「\(d["bookSourceName"] ?? d["sourceName"] ?? "?")」：\(error.localizedDescription)") }
+        }
+        if report.sources.isEmpty {
+            if items.first.flatMap({ ($0 as? [String: Any])?["sourceUrl"] }) != nil {
+                throw YueDuError.message("这是「订阅源 / RSS 源」，不是书源，暂不支持")
+            }
+            let why = report.skipped.prefix(3).joined(separator: "\n")
+            throw YueDuError.message("没有找到可用的书源（共 \(items.count) 条）\n\(why)")
+        }
+        return report
+    }
+
+    /// 标准 JSON 失败时，用 JS 引擎解析（兼容注释、尾逗号、单引号）
+    static func parseJSONLoose(_ t: String) -> Any? {
+        if let d = t.data(using: .utf8), let o = try? JSONSerialization.jsonObject(with: d, options: [.fragmentsAllowed]) {
+            return o
+        }
+        guard t.hasPrefix("[") || t.hasPrefix("{") else { return nil }
+        let r = JSEngine.shared.eval("JSON.stringify(eval('(' + __t + ')'))", bindings: ["__t": t])
+        if let s = r as? String, let d = s.data(using: .utf8) { return try? JSONSerialization.jsonObject(with: d) }
+        return nil
+    }
+
+    static func preview(_ s: String) -> String {
+        let p = s.prefix(80).replacingOccurrences(of: "\n", with: " ")
+        return s.count > 80 ? p + "…" : p
+    }
+
+    /// 把各种字段类型统一成模型需要的类型
+    static func normalize(_ src: [String: Any]) throws -> BookSource {
+        var d: [String: Any] = [:]
+        for k in stringKeys {
+            guard let v = src[k], !(v is NSNull) else { continue }
+            d[k] = (v as? String) ?? JSONPath.stringify(v)
+        }
+        guard let url = d["bookSourceUrl"] as? String, !url.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw YueDuError.message("缺少 bookSourceUrl")
+        }
+        d["bookSourceUrl"] = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if (d["bookSourceName"] as? String)?.isEmpty ?? true { d["bookSourceName"] = url }
+        for k in intKeys { if let v = src[k] { d[k] = Int(JSONPath.stringify(v)) ?? Int(Double(JSONPath.stringify(v)) ?? 0) } }
+        for k in doubleKeys { if let v = src[k] { d[k] = Double(JSONPath.stringify(v)) ?? 0 } }
+        for k in boolKeys {
+            guard let v = src[k], !(v is NSNull) else { continue }
+            if let b = v as? Bool { d[k] = b }
+            else { let s = JSONPath.stringify(v).lowercased(); d[k] = (s == "true" || s == "1") }
+        }
+        for k in ruleKeys {
+            var rule: [String: Any]?
+            if let o = src[k] as? [String: Any] { rule = o }
+            else if let s = src[k] as? String, let o = parseJSONLoose(s) as? [String: Any] { rule = o }
+            // 数组、空值等不认识的格式：当作没有该规则
+            guard let r = rule else { continue }
+            var out: [String: String] = [:]
+            for (rk, rv) in r where !(rv is NSNull) { out[rk] = (rv as? String) ?? JSONPath.stringify(rv) }
+            d[k] = out
+        }
+        let data = try JSONSerialization.data(withJSONObject: d)
+        return try JSONDecoder().decode(BookSource.self, from: data)
+    }
+
+    /// 从一段文字里找书源链接（支持 legado://、yuedu:// 导入链接，以及夹杂文字的网址）
+    static func extractURL(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("[") || t.hasPrefix("{") { return nil }
+        if let r = t.range(of: #"[?&]src=([^\s&]+)"#, options: .regularExpression) {
+            let v = String(t[r]).components(separatedBy: "src=").last ?? ""
+            let decoded = v.removingPercentEncoding ?? v
+            if decoded.lowercased().hasPrefix("http") { return decoded }
+        }
+        if let r = t.range(of: #"https?://[^\s"'<>，。]+"#, options: .regularExpression) {
+            return String(t[r])
+        }
+        return nil
     }
 }
 

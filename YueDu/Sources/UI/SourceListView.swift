@@ -97,35 +97,47 @@ struct SourceListView: View {
 
     // MARK: 导入
 
-    private func done(_ list: [BookSource]) {
-        let (a, u) = store.importSources(list)
-        message = "导入完成：新增 \(a) 个，更新 \(u) 个"
+    private func done(_ r: ImportReport) {
+        let (a, u) = store.importSources(r.sources)
+        var m = "导入完成：新增 \(a) 个，更新 \(u) 个"
+        if !r.skipped.isEmpty {
+            m += "\n跳过 \(r.skipped.count) 个无效条目"
+            m += "\n" + r.skipped.prefix(3).joined(separator: "\n")
+        }
+        message = m
     }
 
     private func importText(_ text: String) {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.hasPrefix("http") && !t.contains("\n") && !t.hasPrefix("{") {
-            importFromURL(t); return
-        }
-        do { done(try BookSourceImporter.parse(Data(t.utf8))) }
+        let t = BookSourceImporter.text(from: Data(text.utf8))
+        if let u = BookSourceImporter.extractURL(t) { importFromURL(u); return }
+        do { done(try BookSourceImporter.parseReport(t)) }
         catch { message = "解析失败：\(error.localizedDescription)" }
     }
 
     private func importFromClipboard() {
-        guard let s = UIPasteboard.general.string, !s.isEmpty else { message = "剪贴板是空的"; return }
+        guard let s = UIPasteboard.general.string, !s.isEmpty else {
+            if UIPasteboard.general.hasURLs, let u = UIPasteboard.general.url { importFromURL(u.absoluteString); return }
+            message = "剪贴板是空的"; return
+        }
         importText(s)
     }
 
     private func importFromURL(_ raw: String) {
-        let u = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !u.isEmpty else { return }
+        let u = BookSourceImporter.extractURL(raw) ?? raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard u.lowercased().hasPrefix("http") else { message = "这不是网址：\(BookSourceImporter.preview(raw))"; return }
         importing = true
         Task {
             defer { importing = false }
             do {
-                let r = try await runInBackground { try HTTP.request(url: u, retry: 1) }
-                let list = try BookSourceImporter.parse(r.data.isEmpty ? Data(r.body.utf8) : r.data)
-                done(list)
+                let r = try await runInBackground {
+                    try HTTP.request(url: u, headers: ["User-Agent": BookSource.defaultUA, "Accept": "application/json,text/plain,*/*"], retry: 2)
+                }
+                guard (200..<400).contains(r.code) else { throw YueDuError.message("网站返回 \(r.code)") }
+                let text = BookSourceImporter.text(from: r.data)
+                if text.lowercased().hasPrefix("<!doctype") || text.lowercased().hasPrefix("<html") {
+                    throw YueDuError.message("这个链接打开的是网页，不是书源 JSON。请找「原始数据 / raw」链接")
+                }
+                done(try BookSourceImporter.parseReport(text))
             } catch {
                 message = "导入失败：\(error.localizedDescription)"
             }
@@ -136,7 +148,7 @@ struct SourceListView: View {
         let ok = url.startAccessingSecurityScopedResource()
         defer { if ok { url.stopAccessingSecurityScopedResource() } }
         guard let d = try? Data(contentsOf: url) else { message = "读取文件失败"; return }
-        do { done(try BookSourceImporter.parse(d)) }
+        do { done(try BookSourceImporter.parseReport(BookSourceImporter.text(from: d))) }
         catch { message = "解析失败：\(error.localizedDescription)" }
     }
 
