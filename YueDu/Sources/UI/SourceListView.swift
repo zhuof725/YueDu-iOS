@@ -210,6 +210,9 @@ struct SourceDebugView: View {
                 Button { showLogin = true } label: {
                     Label(LoginStore.isLoggedIn(source.bookSourceUrl) ? "已登录（点此管理）" : "登录此书源", systemImage: "person.crop.circle")
                 }
+                LabeledRow("登录地址(loginUrl)", (source.loginUrl ?? "").isEmpty ? "无" : (SourceLogin.loginJs(source) != nil ? "脚本，\((source.loginUrl ?? "").count) 字" : "网址"))
+                LabeledRow("登录界面(loginUi)", source.hasLoginUi ? "有，\((source.loginUi ?? "").count) 字" : "无")
+                LabeledRow("公共脚本(jsLib)", (source.jsLib ?? "").isEmpty ? "无" : "\((source.jsLib ?? "").count) 字")
             }
             Section("调试") {
                 HStack {

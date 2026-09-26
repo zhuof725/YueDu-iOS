@@ -195,6 +195,19 @@ final class LoginModel: ObservableObject, LoginUICallback {
         _ = SourceLogin.saveInfo(source, values)
     }
 
+    /// 排查用：App 版本、书源登录相关字段原文、日志
+    func diagnosticReport() -> String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        var out = "【登录诊断】App \(v) (\(b))\n书源：\(source.bookSourceName)\n地址：\(source.bookSourceUrl)\n"
+        out += "\n── loginUrl（\((source.loginUrl ?? "").count) 字）──\n\(source.loginUrl ?? "(空)")\n"
+        out += "\n── loginUi（\((source.loginUi ?? "").count) 字）──\n\(source.loginUi ?? "(空)")\n"
+        out += "\n── jsLib（\((source.jsLib ?? "").count) 字）──\n\((source.jsLib ?? "").prefix(500))\n"
+        out += "\n── 生成的控件 ──\n" + (rows.isEmpty ? "(无)" : rows.map { "\($0.name)(\($0.type))" }.joined(separator: "、")) + "\n"
+        out += "\n── 日志 ──\n" + log.lines.joined(separator: "\n")
+        return out
+    }
+
     // MARK: LoginUICallback（脚本在后台线程调用）
 
     nonisolated func upLoginData(_ data: [String: Any]?) {
@@ -302,9 +315,18 @@ struct SourceLoginView: View {
                     FlexLayout(spacing: 8, lineSpacing: 8) {
                         ForEach(model.rows) { r in rowView(r) }
                     }
-                    if !model.hasUi {
-                        Text("这个书源在 App 里保存的数据中没有登录界面（loginUi），点右上角 ✓ 会执行书源的 login() 登录脚本。\n如果书源文件里明明有登录界面，说明它是用旧版本导入的：请删除这个书源后重新导入。")
-                            .font(.footnote).foregroundColor(.secondary)
+                    if !model.hasUi || (model.rows.isEmpty && !model.loading) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(model.hasUi
+                                 ? "书源写了登录界面，但没能生成出来。"
+                                 : "这个书源在 App 里保存的数据中没有登录界面（loginUi），点右上角 ✓ 会执行书源的 login() 登录脚本。\n如果书源文件里明明有登录界面，说明它是用旧版本导入的：请删除这个书源后重新导入。")
+                                .font(.footnote).foregroundColor(.secondary)
+                            Button {
+                                UIPasteboard.general.string = model.diagnosticReport()
+                                model.toast("已复制诊断信息，请发给开发者")
+                            } label: { Label("复制诊断信息", systemImage: "doc.on.clipboard") }
+                                .font(.footnote)
+                        }
                     }
                 }
                 .padding()

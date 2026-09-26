@@ -321,6 +321,9 @@ let rhSrc = BookSource(bookSourceUrl: "https://rh.test.com", bookSourceName: "RH
     jsLib: "const API = 'lib';\nfunction helper(){ return 1 }")
 check("Rhino jsLib+loginUrl 重复 const 仍能生成界面", SourceLogin.rows(rhSrc).map(\.name).joined(separator: ","), "账号,登录")
 check("Rhino 远程 jsLib 非 JSON 原样", "\(JsLibLoader.scripts("function a(){}").count)", "1")
+let brokenSrc = BookSource(bookSourceUrl: "https://bk.test.com", bookSourceName: "BK", loginUrl: "function login(){}",
+    loginUi: "[{\"name\":\"账号\",\"type\":\"text\"} {\"name\":\"登录\",\"type\":\"button\",\"action\":\"login()\"}] 垃圾")
+check("loginUi 整体坏掉时逐项救回", SourceLogin.rows(brokenSrc).map(\.name).joined(separator: ","), "账号,登录")
 
 // ── 加解密
 let aes = SymmetricCryptoBridge("AES/CBC/PKCS5Padding", Data("1234567890123456".utf8), Data("abcdefghijklmnop".utf8))

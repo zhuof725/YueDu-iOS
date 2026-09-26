@@ -131,12 +131,34 @@ enum SourceLogin {
             do { ui = try evalUi(s, c, info: current, callback: callback, logger: logger) }
             catch { logger?.log("loginUi 脚本出错：\(error.localizedDescription)"); ui = "" }
         }
-        guard let parsed = BookSourceImporter.parseJSONLoose(ui) else {
+        var parsed = BookSourceImporter.parseJSONLoose(ui)
+        if parsed == nil {
+            // 兜底：整体解析不了时，把里面每个 {...} 单独解析，能救多少救多少
+            var items: [Any] = []
+            var depth = 0, start: String.Index?
+            var inStr: Character?
+            var prev: Character = " "
+            for (i, ch) in zip(ui.indices, ui) {
+                if let q = inStr { if ch == q && prev != "\\" { inStr = nil } }
+                else if ch == "\"" || ch == "'" { inStr = ch }
+                else if ch == "{" { if depth == 0 { start = i }; depth += 1 }
+                else if ch == "}" {
+                    depth -= 1
+                    if depth == 0, let st = start, let o = BookSourceImporter.parseJSONLoose(String(ui[st...i])) { items.append(o) }
+                    if depth <= 0 { depth = 0; start = nil }
+                }
+                prev = ch
+            }
+            if !items.isEmpty { parsed = items; logger?.log("loginUi 整体解析失败，逐项解析出 \(items.count) 个控件") }
+        }
+        guard let root = parsed else {
             logger?.log("loginUi JSON 解析失败：\(ui.prefix(200))")
             return []
         }
-        let arr: [Any] = (parsed as? [Any]) ?? [parsed]
-        return parseRows(arr)
+        let arr: [Any] = (root as? [Any]) ?? [root]
+        let rs = parseRows(arr)
+        if rs.isEmpty { logger?.log("loginUi 解析后没有可用控件（每项需要 name）：\(ui.prefix(200))") }
+        return rs
     }
 
     /// 对应 Legado BaseSource.getLoginInfoMap()：
