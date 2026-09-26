@@ -49,7 +49,8 @@ enum SourceLogin {
             let js = (loginJs(s) ?? "") + "\n" + c
             ui = JSEngine.stringify(run(s, js, result: current))
         }
-        guard let arr = BookSourceImporter.parseJSONLoose(ui) as? [Any] else { return [] }
+        guard let parsed = BookSourceImporter.parseJSONLoose(ui) else { return [] }
+        let arr: [Any] = (parsed as? [Any]) ?? [parsed]
         return arr.compactMap { item -> LoginRow? in
             guard let o = item as? [String: Any] else { return nil }
             let name = (o["name"] as? String) ?? ""
