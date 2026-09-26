@@ -81,11 +81,24 @@ final class JSEngine {
       j.encodeURI = function(a,b){ return b ? j.encodeURIWith(String(a),String(b)) : j.encodeURIWith(String(a),'UTF-8'); };
       j.getString = function(r,a,b){ if (typeof a==='boolean') return j.getStringUrl(r,a); if (typeof b==='boolean') { if (a!=null) j.setContent(a); return j.getStringUrl(r,b);} if (a!=null && a!==undefined) j.setContent(a); return j.getStringUrl(r,false); };
     }
+    // 模拟 Java Map 的 get/put/containsKey（Legado 书源里常写 source.getLoginInfoMap().get("账号")）
+    function __jmap(o){
+      if (!o || typeof o !== 'object') return o;
+      var d = function(n, f){ try { Object.defineProperty(o, n, {value: f, enumerable: false, configurable: true, writable: true}); } catch(e) {} };
+      if (typeof o.get !== 'function') d('get', function(k){ var v = this[k]; return v === undefined ? null : v; });
+      if (typeof o.put !== 'function') d('put', function(k, v){ this[k] = v; return v; });
+      d('containsKey', function(k){ return Object.prototype.hasOwnProperty.call(this, k); });
+      d('isEmpty', function(){ return Object.keys(this).length === 0; });
+      d('size', function(){ return Object.keys(this).length; });
+      d('keySet', function(){ return Object.keys(this); });
+      return o;
+    }
     function __setupSource(s){
       if (!s) return;
       s.get = function(k){ return s.getVar(String(k)); };
-      var gm = s.getLoginInfoMap; s.getLoginInfoMap = function(){ return gm.call(s) || {}; };
-      var hm = s.getLoginHeaderMap; s.getLoginHeaderMap = function(){ return hm.call(s) || {}; };
+      var gm = s.getLoginInfoMap; s.getLoginInfoMap = function(){ return __jmap(gm.call(s) || {}); };
+      var hm = s.getLoginHeaderMap; s.getLoginHeaderMap = function(){ return __jmap(hm.call(s) || {}); };
+      var ghm = s.getHeaderMap; s.getHeaderMap = function(){ return __jmap(ghm.call(s) || {}); };
       var pli = s.putLoginInfo; s.putLoginInfo = function(v){ return pli.call(s, typeof v === 'string' ? v : JSON.stringify(v)); };
       var plh = s.putLoginHeader; s.putLoginHeader = function(v){ return plh.call(s, typeof v === 'string' ? v : JSON.stringify(v)); };
     }

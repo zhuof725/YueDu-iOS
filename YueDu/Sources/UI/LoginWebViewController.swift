@@ -9,6 +9,9 @@ final class LoginWebViewController: UIViewController, WKNavigationDelegate, WKUI
     private let headers: [String: String]
     private let onDone: (String) -> Void
     private var webView: WKWebView!
+    /// SwiftUI 里使用时由外层负责关闭
+    var autoDismiss = true
+    private var finished = false
 
     init(url: String, title: String, headers: [String: String], onDone: @escaping (String) -> Void) {
         self.url = url
@@ -52,13 +55,31 @@ final class LoginWebViewController: UIViewController, WKNavigationDelegate, WKUI
         }
     }
 
-    @objc private func closeTapped() {
-        // 取当前页面 cookie 写回（WKWebView 会自动存，主动同步一次）
-        let store = (webView.configuration.websiteDataStore.httpCookieStore)
-        store.getAllCookies { _ in }
-        let final = webView.url?.absoluteString ?? url
-        onDone(final)
-        dismiss(animated: true)
+    @objc private func closeTapped() { finish() }
+
+    /// 把网页里的 Cookie 同步到 App 的网络请求（WKWebView 的 Cookie 和 URLSession 是分开存的）
+    func finish() {
+        guard !finished else { return }
+        finished = true
+        let final = webView?.url?.absoluteString ?? url
+        guard let store = webView?.configuration.websiteDataStore.httpCookieStore else {
+            onDone(final); if autoDismiss { dismiss(animated: true) }; return
+        }
+        store.getAllCookies { [weak self] cookies in
+            for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.onDone(final)
+                if self.autoDismiss { self.dismiss(animated: true) }
+            }
+        }
+    }
+
+    /// 页面加载完也同步一次 Cookie（防止用户直接划掉页面）
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
+        }
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,

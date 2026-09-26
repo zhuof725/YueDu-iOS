@@ -17,7 +17,9 @@ struct LoginRow: Identifiable {
 /// 执行书源登录相关的 JS
 enum SourceLogin {
 
-    /// 取出 loginUrl 里的 JS 代码（@js: 或 <js></js>）；如果是普通网址返回 nil
+    /// 取出 loginUrl 里的 JS 代码。
+    /// 与 Legado 一致：@js: / <js></js> 是 JS；没有前缀时，只要不是网址也当作 JS
+    /// （大多数书源直接写 `function login(){...}`，没有 @js: 前缀）
     static func loginJs(_ s: BookSource) -> String? {
         guard let l = s.loginUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !l.isEmpty else { return nil }
         if l.hasPrefix("@js:") { return String(l.dropFirst(4)) }
@@ -26,13 +28,43 @@ enum SourceLogin {
             if let r = body.range(of: "</js>", options: [.caseInsensitive, .backwards]) { body = String(body[..<r.lowerBound]) }
             return body
         }
-        return nil
+        return looksLikeURL(l) ? nil : l
     }
 
-    /// 网页登录的地址（loginUrl 是普通网址时）
+    /// 判断 loginUrl 是不是网址（而不是 JS 代码）
+    static func looksLikeURL(_ l: String) -> Bool {
+        let t = l.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = t.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
+            // 网址后面可以跟 ,{...} 参数，但不能是多行代码
+            let head = t.components(separatedBy: ",{").first ?? t
+            return !head.contains("\n") && !head.contains(" ")
+        }
+        if t.hasPrefix("/") && !t.hasPrefix("//") && !t.contains("\n") && !t.contains("function") { return true }
+        return false
+    }
+
+    /// 书源是否带登录脚本（有 login 函数）
+    static func hasLoginFunction(_ s: BookSource) -> Bool {
+        guard let js = loginJs(s) else { return false }
+        return js.range(of: #"function\s+login\s*\("#, options: .regularExpression) != nil
+            || js.range(of: #"login\s*=\s*function"#, options: .regularExpression) != nil
+    }
+
+    /// 网页登录的地址（loginUrl 是普通网址时）；去掉 ",{...}" 请求参数
     static func loginPageUrl(_ s: BookSource) -> String? {
         guard let l = s.loginUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !l.isEmpty, loginJs(s) == nil else { return nil }
-        return Util.absoluteURL(s.bookSourceUrl, l)
+        var u = Util.absoluteURL(s.bookSourceUrl, l)
+        if let r = u.range(of: #"\s*,\s*\{"#, options: .regularExpression) { u = String(u[..<r.lowerBound]) }
+        return u
+    }
+
+    /// 网页登录要打开的地址：loginUrl 网址，否则书源首页
+    static func webLoginUrl(_ s: BookSource) -> String {
+        if let u = loginPageUrl(s) { return u }
+        var u = s.bookSourceUrl
+        if let r = u.range(of: "#") { u = String(u[..<r.lowerBound]) }
+        return u
     }
 
     /// 解析登录表单（loginUi 可以是 JSON 数组，也可以是 @js: 生成的）
@@ -82,6 +114,7 @@ enum SourceLogin {
         }
         guard let lj = loginJs(s) else { return }
         let js = """
+        if (typeof result === 'object') __jmap(result);
         \(lj)
         if (typeof login == 'function') { login.apply(this); } else { throw('书源没有实现 login 函数'); }
         """
@@ -94,7 +127,7 @@ enum SourceLogin {
 
     /// 表单里按钮的动作：网址则打开，否则执行 JS
     static func buttonAction(_ s: BookSource, action: String, info: [String: String], logger: DebugLog? = nil) throws -> Any? {
-        let js = (loginJs(s) ?? "") + "\n" + action
+        let js = "if (typeof result === 'object') __jmap(result);\n" + (loginJs(s) ?? "") + "\n" + action
         let engine = RuleEngine(source: s, logger: logger)
         engine.setContent("", baseUrl: s.bookSourceUrl)
         engine.onJSError = { msg in engine.lastError = msg }

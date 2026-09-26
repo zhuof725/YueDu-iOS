@@ -42,6 +42,9 @@ struct SourceListView: View {
                                     }
                                     Button(s.isEnabled ? "停用" : "启用") { store.toggleSource(s) }.tint(s.isEnabled ? .gray : .green)
                                 }
+                                .contextMenu {
+                                    Button { loginSource = s } label: { Label("登录", systemImage: "person.crop.circle") }
+                                }
                                 .swipeActions(edge: .leading) {
                                     Button(s.isEnabled ? "停用" : "启用") { store.toggleSource(s) }.tint(s.isEnabled ? .gray : .green)
                                 }
@@ -98,6 +101,10 @@ struct SourceListView: View {
             Spacer()
             if let g = s.bookSourceGroup, !g.isEmpty {
                 Text(g).font(.caption2).foregroundColor(.secondary).lineLimit(1).frame(maxWidth: 90, alignment: .trailing)
+            }
+            if s.hasLogin {
+                Image(systemName: LoginStore.isLoggedIn(s.bookSourceUrl) ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
+                    .foregroundColor(LoginStore.isLoggedIn(s.bookSourceUrl) ? .green : .blue)
             }
             if !s.isEnabled { Image(systemName: "pause.circle").foregroundColor(.secondary) }
         }
@@ -187,6 +194,7 @@ struct SourceDebugView: View {
     @State private var key = "我的"
     @State private var running = false
     @State private var showJSON = false
+    @State private var showLogin = false
 
     var body: some View {
         List {
@@ -197,6 +205,11 @@ struct SourceDebugView: View {
                 if let c = source.bookSourceComment, !c.isEmpty { Text(c).font(.caption).foregroundColor(.secondary) }
                 Toggle("启用", isOn: Binding(get: { source.isEnabled }, set: { _ in store.toggleSource(source) }))
                 Button("查看书源 JSON") { showJSON = true }
+            }
+            Section(header: Text("登录"), footer: Text(source.hasLogin ? "" : "这个书源没有填写登录地址（loginUrl），一般不需要登录。如果网站确实要登录，也可以用网页登录试试。")) {
+                Button { showLogin = true } label: {
+                    Label(LoginStore.isLoggedIn(source.bookSourceUrl) ? "已登录（点此管理）" : "登录此书源", systemImage: "person.crop.circle")
+                }
             }
             Section("调试") {
                 HStack {
@@ -213,6 +226,7 @@ struct SourceDebugView: View {
                 }
             }
         }
+        .sheet(isPresented: $showLogin) { SourceLoginView(source: source) }
         .navigationTitle("书源调试")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showJSON) {

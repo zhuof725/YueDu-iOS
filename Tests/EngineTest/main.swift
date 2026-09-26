@@ -219,6 +219,20 @@ check("登录 状态", "\(LoginStore.isLoggedIn(loginSource.bookSourceUrl))", "t
 let loginSrc2 = BookSource(bookSourceUrl: "https://l2.test.com", bookSourceName: "L2",
     loginUi: "{\"name\":\"v\",\"type\":\"toggle\",\"chars\":[\"开\",\"关\"]}")
 check("登录 UI 宽松 JSON(单对象)", "\(SourceLogin.rows(loginSrc2).count)", "1")
+// 真实书源常见写法：loginUrl 直接是 function login(){...}，没有 @js: 前缀；用 Java Map 的 .get()
+let loginSrc3 = BookSource(bookSourceUrl: "https://l3.test.com", bookSourceName: "L3",
+    loginUrl: "function login() {\n  var info = source.getLoginInfoMap();\n  source.putLoginHeader(JSON.stringify({Authorization: 'Bearer ' + info.get('账号') + result.get('密码')}));\n}",
+    loginUi: "[{\"name\":\"账号\",\"type\":\"text\"},{\"name\":\"密码\",\"type\":\"password\"}]")
+check("登录 无前缀 JS 识别", "\(SourceLogin.loginJs(loginSrc3) != nil)", "true")
+check("登录 无前缀 JS 不当网址", "\(SourceLogin.loginPageUrl(loginSrc3) == nil)", "true")
+check("登录 有 login 函数", "\(SourceLogin.hasLoginFunction(loginSrc3))", "true")
+do { try SourceLogin.login(loginSrc3, info: ["账号": "me", "密码": "pw"]) } catch { print("  login3 error: \(error)") }
+check("登录 Map.get 写法", LoginStore.headerMap(loginSrc3.bookSourceUrl)["Authorization"] ?? "", "Bearer mepw")
+let loginSrc4 = BookSource(bookSourceUrl: "https://www.l4.com", bookSourceName: "L4", loginUrl: "https://www.l4.com/login.php")
+check("登录 网址型", SourceLogin.loginPageUrl(loginSrc4) ?? "", "https://www.l4.com/login.php")
+check("登录 网址型 非 JS", "\(SourceLogin.loginJs(loginSrc4) == nil)", "true")
+let loginSrc5 = BookSource(bookSourceUrl: "https://www.l5.com", bookSourceName: "L5", loginUrl: "/user/login.html")
+check("登录 相对网址", SourceLogin.webLoginUrl(loginSrc5), "https://www.l5.com/user/login.html")
 
 // ── 加解密
 let aes = SymmetricCryptoBridge("AES/CBC/PKCS5Padding", Data("1234567890123456".utf8), Data("abcdefghijklmnop".utf8))

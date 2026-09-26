@@ -29,14 +29,20 @@ struct SourceLoginView: View {
             .toolbar { Button("关闭") { dismiss() } }
         }
         .navigationViewStyle(.stack)
-        .onAppear { loadState() }
+        .onAppear {
+            loadState()
+            // 没有表单、也没有 login 函数：直接打开网页登录
+            if rows.isEmpty && !SourceLogin.hasLoginFunction(source) && loginHeaderText == nil { showWeb = true }
+        }
     }
 
     private var formView: some View {
         List {
             if rows.isEmpty {
                 Section {
-                    Text("该书源没有登录表单，将打开网页登录。\n在网页里完成登录后点「完成」返回。")
+                    Text(SourceLogin.hasLoginFunction(source)
+                         ? "该书源使用脚本登录，点下方「登录」执行。"
+                         : "该书源使用网页登录。\n点下方「网页登录」，在网页里登录后点右上角「完成」返回。")
                         .font(.footnote).foregroundColor(.secondary)
                 }
             } else {
@@ -84,8 +90,9 @@ struct SourceLoginView: View {
         }
         .sheet(isPresented: $showWeb) {
             WebLoginSheet(source: source) { done in
-                isLoggedIn = done
                 loadState()
+                isLoggedIn = done
+                message = done ? "成功：网页登录状态已保存" : "未检测到登录 Cookie，如已登录可直接去搜索试试"
             }
         }
     }
@@ -117,37 +124,46 @@ struct SourceLoginView: View {
         needReLogin = false
     }
 
-    /// 执行表单按钮（发送验证码、检查等）
+    /// 执行表单按钮（发送验证码、检查等）。脚本可能联网或弹网页，放后台执行
     private func runButton(_ row: LoginRow) {
-        guard let action = row.action else { return }
+        guard let action = row.action?.trimmingCharacters(in: .whitespacesAndNewlines), !action.isEmpty else { return }
         working = true; message = nil
-        defer { working = false }
-        do {
-            if action.lowercased().hasPrefix("http") {
-                let abs = Util.absoluteURL(source.bookSourceUrl, action)
-                BrowserPresenter.presentAndWait(url: abs, title: row.label, headers: source.headerMap())
-                loadState()
-            } else {
-                let v = try SourceLogin.buttonAction(source, action: action, info: values)
-                let s = JSEngine.stringify(v)
-                if !s.isEmpty { message = s }
-                loadState()
+        let src = source, info = values
+        Task {
+            do {
+                if SourceLogin.looksLikeURL(action) {
+                    let abs = Util.absoluteURL(src.bookSourceUrl, action)
+                    _ = try await runInBackground { BrowserPresenter.presentAndWait(url: abs, title: row.label, headers: src.headerMap()) }
+                } else {
+                    let s = try await runInBackground { JSEngine.stringify(try SourceLogin.buttonAction(src, action: action, info: info)) }
+                    if !s.isEmpty && s != "undefined" { message = s }
+                }
+            } catch {
+                message = "出错：\(error.localizedDescription)"
             }
-        } catch {
-            message = "出错：\(error.localizedDescription)"
+            let m = message
+            loadState()
+            message = m
+            working = false
         }
     }
 
     private func doLogin() {
+        // 没有登录脚本 → 只能网页登录
+        if SourceLogin.loginJs(source) == nil {
+            showWeb = true; return
+        }
         working = true; message = nil
-        defer { working = false }
-        do {
-            try SourceLogin.login(source, info: values)
-            // 登录脚本可能改了登录头，刷新状态
-            loadState()
-            message = isLoggedIn ? "成功：已登录" : "已保存账号信息"
-        } catch {
-            message = "登录失败：\(error.localizedDescription)"
+        let src = source, info = values
+        Task {
+            do {
+                try await runInBackground { try SourceLogin.login(src, info: info) }
+                loadState()
+                message = isLoggedIn ? "成功：已登录" : "成功：已保存账号信息（书源脚本没有返回登录凭证，可去搜索试试是否生效）"
+            } catch {
+                message = "登录失败：\(error.localizedDescription)"
+            }
+            working = false
         }
     }
 }
@@ -159,17 +175,11 @@ struct WebLoginSheet: View {
     let onFinish: (Bool) -> Void
 
     var body: some View {
-        NavigationView {
-            WebLoginContainer(source: source) { ok in
-                onFinish(ok)
-                dismiss()
-            }
-            .navigationTitle("网页登录").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { onFinish(true); dismiss() } }
-            }
+        WebLoginContainer(source: source) { ok in
+            onFinish(ok)
+            dismiss()
         }
+        .ignoresSafeArea()
     }
 }
 
@@ -177,12 +187,13 @@ struct WebLoginContainer: UIViewControllerRepresentable {
     let source: BookSource
     let onDone: (Bool) -> Void
 
-    func makeUIViewController(context: Context) -> LoginWebViewController {
-        let vc = LoginWebViewController(url: SourceLogin.loginPageUrl(source) ?? source.bookSourceUrl,
-                                        title: "登录", headers: source.headerMap()) { _ in
+    func makeUIViewController(context: Context) -> UINavigationController {
+        let vc = LoginWebViewController(url: SourceLogin.webLoginUrl(source),
+                                        title: "网页登录", headers: source.headerMap()) { _ in
             DispatchQueue.main.async { onDone(LoginStore.isLoggedIn(source.bookSourceUrl)) }
         }
-        return vc
+        vc.autoDismiss = false
+        return UINavigationController(rootViewController: vc)
     }
-    func updateUIViewController(_ vc: LoginWebViewController, context: Context) {}
+    func updateUIViewController(_ vc: UINavigationController, context: Context) {}
 }
