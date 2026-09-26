@@ -115,6 +115,9 @@ struct SourceListView: View {
     private func done(_ r: ImportReport) {
         let (a, u) = store.importSources(r.sources)
         var m = "导入完成：新增 \(a) 个，更新 \(u) 个"
+        let lg = r.sources.filter { $0.hasLogin }.count
+        if lg > 0 { m += "\n其中 \(lg) 个需要登录，\(r.loginUiCount) 个带自定义登录界面" }
+        if !r.lostLoginUi.isEmpty { m += "\n⚠️ 这些书源的登录界面没读进来，请截图发给开发者：" + r.lostLoginUi.prefix(5).joined(separator: "、") }
         if !r.skipped.isEmpty {
             m += "\n跳过 \(r.skipped.count) 个无效条目"
             m += "\n" + r.skipped.prefix(3).joined(separator: "\n")

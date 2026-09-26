@@ -146,6 +146,10 @@ struct ContentRule: Codable, Hashable {
 
 struct ImportReport {
     var sources: [BookSource] = []
+    /// 带书源自定义登录界面（loginUi）的数量
+    var loginUiCount: Int { sources.filter { $0.hasLoginUi }.count }
+    /// 原文里写了 loginUi 的书源名 → 导入后是否还在（用于发现导入丢字段）
+    var lostLoginUi: [String] = []
     var skipped: [String] = []     // 跳过的条目及原因
 }
 
@@ -192,7 +196,13 @@ enum BookSourceImporter {
         var report = ImportReport()
         for (i, it) in items.enumerated() {
             guard let d = it as? [String: Any] else { report.skipped.append("第\(i + 1)条：不是对象"); continue }
-            do { report.sources.append(try normalize(d)) }
+            do {
+                let src = try normalize(d)
+                let rawUi = d.first { $0.key.lowercased() == "loginui" }?.value
+                let rawHas = rawUi.map { !($0 is NSNull) && !JSONPath.stringify($0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? false
+                if rawHas && !src.hasLoginUi { report.lostLoginUi.append(src.bookSourceName) }
+                report.sources.append(src)
+            }
             catch { report.skipped.append("第\(i + 1)条「\(d["bookSourceName"] ?? d["sourceName"] ?? "?")」：\(error.localizedDescription)") }
         }
         if report.sources.isEmpty {
@@ -226,8 +236,11 @@ enum BookSourceImporter {
     /// 把各种字段类型统一成模型需要的类型
     static func normalize(_ src: [String: Any]) throws -> BookSource {
         var d: [String: Any] = [:]
+        // 键名不区分大小写（有的导出工具写成 loginUI / LoginUi），也认 login_ui 这种写法
+        var lower: [String: Any] = [:]
+        for (k, v) in src { lower[k.lowercased().replacingOccurrences(of: "_", with: "")] = v }
         for k in stringKeys {
-            guard let v = src[k], !(v is NSNull) else { continue }
+            guard let v = src[k] ?? lower[k.lowercased()], !(v is NSNull) else { continue }
             d[k] = (v as? String) ?? JSONPath.stringify(v)
         }
         guard let url = d["bookSourceUrl"] as? String, !url.trimmingCharacters(in: .whitespaces).isEmpty else {

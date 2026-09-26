@@ -323,6 +323,8 @@ check("Rhino jsLib+loginUrl 重复 const 仍能生成界面", SourceLogin.rows(r
 check("Rhino 远程 jsLib 非 JSON 原样", "\(JsLibLoader.scripts("function a(){}").count)", "1")
 let brokenSrc = BookSource(bookSourceUrl: "https://bk.test.com", bookSourceName: "BK", loginUrl: "function login(){}",
     loginUi: "[{\"name\":\"账号\",\"type\":\"text\"} {\"name\":\"登录\",\"type\":\"button\",\"action\":\"login()\"}] 垃圾")
+check("导入 loginUI 键名大小写", (try? BookSourceImporter.parseReport("[{\"bookSourceUrl\":\"https://k.com\",\"bookSourceName\":\"K\",\"loginUI\":\"[{\\\"name\\\":\\\"a\\\"}]\"}]"))?.sources.first?.hasLoginUi.description ?? "失败", "true")
+check("导入 起点 loginUi 不丢", { if let d = try? Data(contentsOf: samplesDir.appendingPathComponent("qimo.json")), let r = try? BookSourceImporter.parseReport(BookSourceImporter.text(from: d)) { return "\(r.loginUiCount),\(r.lostLoginUi.count)" }; return "失败" }(), "1,0")
 check("loginUi 整体坏掉时逐项救回", SourceLogin.rows(brokenSrc).map(\.name).joined(separator: ","), "账号,登录")
 
 // ── 加解密
