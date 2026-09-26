@@ -135,6 +135,7 @@ enum Util {
         s = s.replacingOccurrences(of: "<img[^>]*>", with: "\n[图片]\n", options: [.regularExpression, .caseInsensitive])
         s = s.replacingOccurrences(of: "</?[a-zA-Z]+(?=[ >])[^<>]*>", with: "", options: .regularExpression)
         s = unescapeHTML(s)
+        s = s.replacingOccurrences(of: "\u{00A0}", with: " ")
         s = s.replacingOccurrences(of: "\\s*\\n+\\s*", with: "\n　　", options: .regularExpression)
         s = s.replacingOccurrences(of: "^[\\n\\s]+", with: "　　", options: .regularExpression)
         s = s.replacingOccurrences(of: "[\\n\\s]+$", with: "", options: .regularExpression)
