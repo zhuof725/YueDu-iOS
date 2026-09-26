@@ -3,7 +3,7 @@ import Kanna
 
 /// XPath 规则解析（基于 Kanna / libxml2）—— 对应 Legado AnalyzeByXPath
 final class AnalyzeByXPath {
-    private var doc: HTMLDocument?
+    private var doc: Kanna.HTMLDocument?
 
     init(_ content: Any) {
         var html = AnalyzeByJSoup.stringOf(content)
@@ -13,7 +13,7 @@ final class AnalyzeByXPath {
         doc = try? HTML(html: html, encoding: .utf8)
     }
 
-    private func nodeString(_ n: XMLElement) -> String {
+    private func nodeString(_ n: Kanna.XMLElement) -> String {
         if let h = n.toHTML, h.hasPrefix("<") { return h }
         return n.text ?? ""
     }
