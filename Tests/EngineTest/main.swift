@@ -299,6 +299,17 @@ let lcSrc = BookSource(bookSourceUrl: "https://lc.test.com", bookSourceName: "LC
     loginUi: "[{\"name\":\"b\",\"type\":\"button\",\"action\":\"java.put('lc', String(isLongClick))\"}]")
 _ = try? SourceLogin.buttonAction(lcSrc, action: "java.put('lc', String(isLongClick))", info: [:], isLongClick: true)
 check("Legado 长按 isLongClick", VariableStore.shared.get("src:https://lc.test.com", "lc") ?? "", "true")
+// loginUi 常见的「不标准 JSON」（Legado 用 Gson 宽松模式都能识别）
+let rawNL = "[{\"name\":\"登录\",\"type\":\"button\",\"action\":\"var a = 1;\n java.toast('x')\"},\n{name:'账号', type:'text',},\n// 注释\n{\"name\":\"密码\",\"type\":\"password\"},]"
+check("loginUi 字符串内换行/单引号/注释/尾逗号", "\((LenientJSON.parse(rawNL) as? [Any])?.count ?? -1)", "3")
+let nlSrc = BookSource(bookSourceUrl: "https://nl.test.com", bookSourceName: "NL", loginUrl: "function login(){}", loginUi: rawNL)
+check("loginUi 宽松 JSON 生成控件", SourceLogin.rows(nlSrc).map(\.name).joined(separator: ","), "登录,账号,密码")
+// 书源文件里 loginUi 直接写成数组（不是字符串）
+let arrImport = "[{\"bookSourceUrl\":\"https://arr.test.com\",\"bookSourceName\":\"ARR\",\"loginUrl\":\"function login(){}\",\"loginUi\":[{\"name\":\"u\",\"type\":\"text\"},{\"name\":\"b\",\"type\":\"button\",\"action\":\"login()\"}]}]"
+if let a = try? BookSourceImporter.parseReport(arrImport).sources.first {
+    check("loginUi 为数组时导入", "\(SourceLogin.rows(a).count)", "2")
+} else { check("loginUi 为数组时导入", "失败", "2") }
+check("宽松 JSON 不误吞普通文本", "\(LenientJSON.parse("hello") == nil)", "true")
 
 // ── 加解密
 let aes = SymmetricCryptoBridge("AES/CBC/PKCS5Padding", Data("1234567890123456".utf8), Data("abcdefghijklmnop".utf8))

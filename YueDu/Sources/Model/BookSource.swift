@@ -38,7 +38,13 @@ struct BookSource: Codable, Identifiable, Hashable {
     /// 这个书源是否支持登录
     var hasLogin: Bool {
         !(loginUrl ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !(loginUi ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        hasLoginUi
+    }
+
+    /// 是否有书源自定义登录界面（"null"、"[]" 视为没有）
+    var hasLoginUi: Bool {
+        let t = (loginUi ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return !t.isEmpty && t != "null" && t != "[]"
     }
 
     /// 解析 header 字段（可以是 JSON 对象，也可以是 @js: 代码）
@@ -205,6 +211,8 @@ enum BookSourceImporter {
             return o
         }
         guard t.hasPrefix("[") || t.hasPrefix("{") else { return nil }
+        // 与 Legado（Gson 宽松模式）一致：字符串里有换行、单引号、注释、尾逗号都能解析
+        if let o = LenientJSON.parse(t) { return o }
         let r = JSEngine.shared.eval("JSON.stringify(eval('(' + __t + ')'))", bindings: ["__t": t])
         if let s = r as? String, let d = s.data(using: .utf8) { return try? JSONSerialization.jsonObject(with: d) }
         return nil

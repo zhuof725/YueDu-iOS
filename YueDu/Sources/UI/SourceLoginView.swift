@@ -34,13 +34,16 @@ final class LoginModel: ObservableObject, LoginUICallback {
         headerText = LoginStore.loginHeader(source.bookSourceUrl)
     }
 
-    var hasUi: Bool { !(source.loginUi ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var hasUi: Bool { source.hasLoginUi }
 
     // MARK: 构建界面（Legado onFragmentCreated / rowUiBuilder）
 
     /// 第一次打开：先取 source.getLoginInfoMap()（没有时按 default 生成），再生成界面
     func start() {
         let src = source
+        let raw = (src.loginUi ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        log.log("loginUrl：\(SourceLogin.loginJs(src) != nil ? "登录脚本" : (src.loginUrl?.isEmpty == false ? "网址" : "无"))")
+        log.log("loginUi（\(raw.count) 字）：\(raw.isEmpty ? "无" : String(raw.prefix(300)))")
         loading = true
         Task {
             let info: [String: String] = await Task.detached { SourceLogin.loginInfoMap(src) }.value
@@ -59,6 +62,7 @@ final class LoginModel: ObservableObject, LoginUICallback {
             }.value
             loading = false
             if rs.isEmpty && hasUi { uiError = "登录界面（loginUi）生成失败，可在右上角「⋯ → 日志」查看原因" }
+            log.log("生成控件 \(rs.count) 个：\(rs.map { "\($0.name)(\($0.type))" }.joined(separator: "、"))")
             apply(rs)
         }
     }
@@ -299,7 +303,7 @@ struct SourceLoginView: View {
                         ForEach(model.rows) { r in rowView(r) }
                     }
                     if !model.hasUi {
-                        Text("该书源没有自定义登录界面，点右上角「确认」执行书源的 login() 登录脚本。")
+                        Text("这个书源在 App 里保存的数据中没有登录界面（loginUi），点右上角 ✓ 会执行书源的 login() 登录脚本。\n如果书源文件里明明有登录界面，说明它是用旧版本导入的：请删除这个书源后重新导入。")
                             .font(.footnote).foregroundColor(.secondary)
                     }
                 }

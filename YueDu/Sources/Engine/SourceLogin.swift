@@ -126,7 +126,7 @@ enum SourceLogin {
 
     /// 解析登录表单（loginUi 可以是 JSON 数组，也可以是 @js: 生成的）
     static func rows(_ s: BookSource, current: [String: String] = [:], callback: LoginUICallback? = nil, logger: DebugLog? = nil) -> [LoginRow] {
-        guard var ui = s.loginUi?.trimmingCharacters(in: .whitespacesAndNewlines), !ui.isEmpty else { return [] }
+        guard s.hasLoginUi, var ui = s.loginUi?.trimmingCharacters(in: .whitespacesAndNewlines) else { return [] }
         if let c = loginUiJs(s) {
             do { ui = try evalUi(s, c, info: current, callback: callback, logger: logger) }
             catch { logger?.log("loginUi 脚本出错：\(error.localizedDescription)"); ui = "" }
