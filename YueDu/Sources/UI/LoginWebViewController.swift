@@ -56,11 +56,8 @@ final class LoginWebViewController: UIViewController, WKNavigationDelegate, WKUI
         // 取当前页面 cookie 写回（WKWebView 会自动存，主动同步一次）
         let store = (webView.configuration.websiteDataStore.httpCookieStore)
         store.getAllCookies { _ in }
-        if let u = webView.url?.absoluteString ?? URL(string: url) {
-            onDone(u)
-        } else {
-            onDone(url)
-        }
+        let final = webView.url?.absoluteString ?? url
+        onDone(final)
         dismiss(animated: true)
     }
 
