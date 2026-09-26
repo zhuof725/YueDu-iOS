@@ -3,3 +3,5 @@ build/
 Payload/
 *.ipa
 .DS_Store
+push.sh
+ci.sh

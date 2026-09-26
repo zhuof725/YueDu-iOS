@@ -32,7 +32,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build > build.log 2>&1 || { grep -E "error:" build.log | head -50; tail -30 build.log; exit 1; }
+            build > build.log 2>&1 || { grep -E "error:" build.log | sort -u | head -80 > errors.txt; cat errors.txt; tail -30 build.log; exit 1; }
           grep -E "\*\* BUILD" build.log
           # 必须真的有可执行文件，否则算失败
           test -f build/Build/Products/Release-iphoneos/YueDu.app/YueDu

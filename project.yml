@@ -6,9 +6,16 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "2"
     SWIFT_VERSION: "5.0"
+packages:
+  SwiftSoup:
+    url: https://github.com/scinfu/SwiftSoup
+    exactVersion: 2.13.9
+  Kanna:
+    url: https://github.com/tid-kijyun/Kanna
+    exactVersion: 5.3.0
 targets:
   YueDu:
     type: application
@@ -16,6 +23,11 @@ targets:
     sources:
       - path: YueDu/Sources
       - path: YueDu/Resources
+    dependencies:
+      - package: SwiftSoup
+      - package: Kanna
+      - sdk: JavaScriptCore.framework
+      - sdk: WebKit.framework
     info:
       path: YueDu/Info.plist
       properties:
@@ -25,10 +37,27 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleURLTypes:
+          - CFBundleURLName: io.github.zhuof725.yuedu
+            CFBundleURLSchemes:
+              - yuedu
+              - legado
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: JSON
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.json
+              - public.plain-text
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.zhuof725.yuedu
@@ -37,3 +66,4 @@ targets:
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""
         ENABLE_BITCODE: "NO"
+        SWIFT_STRICT_CONCURRENCY: minimal
