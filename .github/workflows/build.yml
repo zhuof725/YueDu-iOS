@@ -21,6 +21,14 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
+      - name: Engine tests (规则引擎测试)
+        run: |
+          set -o pipefail
+          xcodebuild -project YueDu.xcodeproj -scheme EngineTest -configuration Debug \
+            -destination 'platform=macOS' -derivedDataPath build-test build > test-build.log 2>&1 \
+            || { grep -E "error:" test-build.log | sort -u | head -80; exit 1; }
+          ./build-test/Build/Products/Debug/EngineTest
+
       - name: Build (unsigned)
         run: |
           set +e

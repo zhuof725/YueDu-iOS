@@ -10,8 +10,8 @@ final class JSEngine {
     private let lock = NSRecursiveLock()
 
     /// 每次执行创建新的 context（书源脚本互不干扰），共用一个虚拟机
-    func makeContext() -> JSContext {
-        let ctx = JSContext(virtualMachine: vm)!
+    func makeContext(vm custom: JSVirtualMachine? = nil) -> JSContext {
+        let ctx = JSContext(virtualMachine: custom ?? vm)!
         ctx.exceptionHandler = { c, e in c?.exception = e }
         // 常用 polyfill
         ctx.evaluateScript(JSEngine.polyfill)
@@ -78,8 +78,7 @@ final class JSEngine {
       if (!j) return;
       j.get = function(a,b){ return arguments.length>=2 ? j.httpGet(a,b) : j.getVar(a); };
       j.encodeURI = function(a,b){ return b ? j.encodeURIWith(String(a),String(b)) : j.encodeURIWith(String(a),'UTF-8'); };
-      var gs = j.getStringUrl;
-      j.getString = function(r,a,b){ if (typeof a==='boolean') return gs(r,a); if (typeof b==='boolean') { if (a!=null) j.setContent(a); return gs(r,b);} if (a!=null && a!==undefined) j.setContent(a); return gs(r,false); };
+      j.getString = function(r,a,b){ if (typeof a==='boolean') return j.getStringUrl(r,a); if (typeof b==='boolean') { if (a!=null) j.setContent(a); return j.getStringUrl(r,b);} if (a!=null && a!==undefined) j.setContent(a); return j.getStringUrl(r,false); };
     }
     if (!Array.prototype.flat) { Array.prototype.flat = function(){ return [].concat.apply([], this); }; }
     """
@@ -165,7 +164,12 @@ final class JSEngine {
         let g = DispatchGroup()
         for (i, u) in urls.enumerated() {
             g.enter()
-            DispatchQueue.global().async { out[i] = self.ajax(u); g.leave() }
+            let src = source, bk = engine?.book
+            DispatchQueue.global().async {
+                let a = AnalyzeUrl(u, source: src, book: bk, engine: RuleEngine(source: src, book: bk))
+                out[i] = (try? a.fetch().body) ?? ""
+                g.leave()
+            }
         }
         g.wait()
         return out

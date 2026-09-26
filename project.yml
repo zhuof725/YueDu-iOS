@@ -67,3 +67,21 @@ targets:
         CODE_SIGN_IDENTITY: ""
         ENABLE_BITCODE: "NO"
         SWIFT_STRICT_CONCURRENCY: minimal
+  EngineTest:
+    type: tool
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Tests/EngineTest
+      - path: YueDu/Sources/Engine
+      - path: YueDu/Sources/Rule
+      - path: YueDu/Sources/Model/Book.swift
+      - path: YueDu/Sources/Model/BookSource.swift
+    dependencies:
+      - package: SwiftSoup
+      - package: Kanna
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: "-"
+        SWIFT_STRICT_CONCURRENCY: minimal

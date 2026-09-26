@@ -1,0 +1,179 @@
+import Foundation
+
+// 规则引擎自动化测试：用本地假网页模拟常见书源写法，逐条核对解析结果。
+// 在 GitHub 云端（macOS）运行，任何一条失败都会让编译失败。
+
+var passed = 0
+var failed = 0
+
+func check(_ name: String, _ actual: String, _ expected: String) {
+    if actual == expected {
+        passed += 1
+        print("✅ \(name)")
+    } else {
+        failed += 1
+        print("❌ \(name)\n   期望: \(expected.debugDescription)\n   实际: \(actual.debugDescription)")
+    }
+}
+
+func checkList(_ name: String, _ actual: [String]?, _ expected: [String]) {
+    check(name, (actual ?? []).joined(separator: " | "), expected.joined(separator: " | "))
+}
+
+let html = """
+<html><head><title>测试站</title></head><body>
+<div id="main">
+  <ul class="list">
+    <li class="item"><a href="/book/1.html" title="t1">斗破苍穹</a><span class="author">作者：天蚕土豆</span><img src="/c/1.jpg"></li>
+    <li class="item"><a href="/book/2.html">凡人修仙传</a><span class="author">作者：忘语</span><img data-original="/c/2.jpg"></li>
+    <li class="item vip"><a href="https://other.com/b/3">遮天</a><span class="author">辰东 著</span></li>
+  </ul>
+  <div class="intro">  简介第一行<br>简介&nbsp;第二行<p>第三段</p></div>
+  <div id="content">&nbsp;&nbsp;&nbsp;&nbsp;第一段正文。<br><br>&nbsp;&nbsp;&nbsp;&nbsp;第二段正文。<script>ad()</script><br>第三段</div>
+  <a id="next" href="/book/1_2.html">下一页</a>
+</div>
+</body></html>
+"""
+
+let source = BookSource(bookSourceUrl: "https://www.test.com", bookSourceName: "测试源")
+let e = RuleEngine(source: source)
+e.setContent(html, baseUrl: "https://www.test.com/search?q=x")
+e.setRedirectUrl("https://www.test.com/search?q=x")
+
+// ── 默认 JSoup 语法
+check("列表 class.item", "\(e.getElements("class.item").count)", "3")
+check("列表 @CSS", "\(e.getElements("@CSS:li.item").count)", "3")
+check("列表 id.main@tag.li", "\(e.getElements("id.main@tag.li").count)", "3")
+check("列表 索引 .0", "\(e.getElements("class.item.0").count)", "1")
+check("列表 排除 !0", "\(e.getElements("class.item!0").count)", "2")
+check("列表 负索引 .-1", "\(e.getElements("class.item.-1").count)", "1")
+check("列表 [0,2]", "\(e.getElements("class.item[0,2]").count)", "2")
+check("列表 [1:2]", "\(e.getElements("class.item[1:2]").count)", "2")
+check("列表 [-1:0] 反向", "\(e.getElements("class.item[-1:0]").count)", "3")
+check("列表 || 或", "\(e.getElements("class.none||class.item").count)", "3")
+check("列表 && 合并", "\(e.getElements("class.item.0&&class.item.1").count)", "2")
+check("列表 CSS 选择器", "\(e.getElements("ul.list > li").count)", "3")
+
+let items = e.getElements("class.item")
+func item(_ i: Int) -> RuleEngine {
+    let x = RuleEngine(source: source)
+    x.setContent(items[i], baseUrl: "https://www.test.com/search?q=x")
+    x.setRedirectUrl("https://www.test.com/search?q=x")
+    return x
+}
+check("书名 tag.a@text", item(0).getString("tag.a@text"), "斗破苍穹")
+check("书名 tag.a.0@text", item(1).getString("tag.a.0@text"), "凡人修仙传")
+check("书名 CSS", item(0).getString("@CSS:a@text"), "斗破苍穹")
+check("属性 title", item(0).getString("tag.a@title"), "t1")
+check("作者 替换 ##", item(0).getString("class.author@text##作者："), "天蚕土豆")
+check("作者 格式化", Util.formatAuthor(item(2).getString("class.author@text")), "辰东")
+check("链接 相对转绝对", item(0).getString("tag.a@href", isUrl: true), "https://www.test.com/book/1.html")
+check("链接 绝对保持", item(2).getString("tag.a@href", isUrl: true), "https://other.com/b/3")
+check("封面 || 或", item(1).getString("tag.img@src||tag.img@data-original"), "/c/2.jpg")
+check("ownText", item(0).getString("tag.li@ownText"), "")
+check("text 节点 li", item(0).getString("class.author@textNodes"), "作者：天蚕土豆")
+check("@@ 前缀", item(0).getString("@@tag.a@text"), "斗破苍穹")
+check("替换 ###只取第一个", item(0).getString("class.author@text##作者：(.*)##$1###"), "天蚕土豆")
+
+// ── 文本拼接和 {{}} JS
+check("{{}} JS 表达式", item(0).getString("{{1+2}}"), "3")
+check("@js: 处理结果", item(0).getString("tag.a@text@js:result+'!'"), "斗破苍穹!")
+check("<js></js>", item(0).getString("tag.a@text<js>result.length</js>"), "4")
+check("{{@规则}} 拼接", item(0).getString("书名:{{@@tag.a@text}}"), "书名:斗破苍穹")
+check("java.base64", e.getString("@js:java.base64Encode('abc')"), "YWJj")
+check("java.md5", e.getString("@js:java.md5Encode('abc')"), "900150983cd24fb0d6963f7d28e17f72")
+check("java.put/get", e.getString("@js:java.put('k','v1');java.get('k')"), "v1")
+check("@put / @get", { _ = e.getString("@put:{bid:\"tag.title@text\"}tag.title@text"); return e.getString("@get:{bid}") }(), "测试站")
+check("java.getString 在 JS 中", e.getString("@js:java.getString('tag.title@text')"), "测试站")
+check("t2s 繁转简", e.getString("@js:java.t2s('簡體')"), "简体")
+check("中文数字章节", e.getString("@js:java.toNumChapter('第一百二十三章 标题')"), "第123章 标题")
+
+// ── 正文
+let content = Util.formatContent(e.getString("id.content@html", unescape: false))
+check("正文 去广告脚本+分段", content, "　　第一段正文。\n　　第二段正文。\n　　第三段")
+check("简介 多段", Util.formatIntro(e.getString("class.intro@html")) ?? "", "　　简介第一行\n　　简介 第二行\n　　第三段")
+check("下一页链接", e.getStringList("id.next@href", isUrl: true)?.first ?? "", "https://www.test.com/book/1_2.html")
+
+// ── XPath
+check("XPath 列表", "\(e.getElements("//li[@class='item']").count)", "2")
+check("XPath 文本", e.getString("//li[1]/a/text()"), "斗破苍穹")
+check("XPath 属性", e.getString("@XPath://li[2]/a/@href"), "/book/2.html")
+
+// ── 正则列表（: 开头）
+let re = RuleEngine(source: source)
+re.setContent(html, baseUrl: "https://www.test.com/")
+let rItems = re.getElements(":<a href=\"([^\"]+)\"[^>]*>([^<]+)</a>")
+check("正则 列表数", "\(rItems.count)", "4")
+if rItems.count > 0 {
+    let x = RuleEngine(source: source)
+    x.setContent(rItems[0], baseUrl: "https://www.test.com/")
+    check("正则 $2", x.getString("$2"), "斗破苍穹")
+    check("正则 $1 链接", x.getString("$1", isUrl: true), "https://www.test.com/book/1.html")
+}
+
+// ── JSON
+let json = """
+{"code":0,"data":{"list":[
+ {"name":"诡秘之主","author":"爱潜水的乌贼","id":101,"tags":["玄幻","西幻"],"vip":true},
+ {"name":"大奉打更人","author":"卖报小郎君","id":102,"tags":["仙侠"],"vip":false}
+],"total":2}}
+"""
+let j = RuleEngine(source: source)
+j.setContent(json, baseUrl: "https://api.test.com/s")
+check("JSON 列表", "\(j.getElements("$.data.list[*]").count)", "2")
+check("JSON 列表 无[*]", "\(j.getElements("$.data.list").count)", "2")
+check("JSON 深度扫描", j.getString("$..total"), "2")
+check("JSON 过滤器", j.getString("$.data.list[?(@.id == 102)].name"), "大奉打更人")
+check("JSON 负索引", j.getString("$.data.list[-1].name"), "大奉打更人")
+let jItems = j.getElements("$.data.list[*]")
+if jItems.count == 2 {
+    let x = RuleEngine(source: source)
+    x.setContent(jItems[0], baseUrl: "https://api.test.com/s")
+    check("JSON 字段", x.getString("$.name"), "诡秘之主")
+    check("JSON 字段 无$", x.getString("name"), "诡秘之主")
+    check("JSON 数组拼接", x.getStringList("$.tags")?.joined(separator: ",") ?? "", "玄幻,西幻")
+    check("JSON 数字", x.getString("$.id"), "101")
+    check("JSON 布尔", x.getString("$.vip"), "true")
+    check("JSON {{}} 拼接链接", x.getString("/book/{{$.id}}.html", isUrl: true), "https://api.test.com/book/101.html")
+    check("JSON {$.} 内嵌", x.getString("{$.name}-{$.author}"), "诡秘之主-爱潜水的乌贼")
+    check("JSON && 合并", x.getString("$.name&&$.author"), "诡秘之主\n爱潜水的乌贼")
+}
+
+// ── 网址规则
+let au1 = AnalyzeUrl("/search?q={{key}}&p={{page}}", key: "斗破", page: 2, source: source)
+check("URL {{key}} {{page}}", au1.requestUrl, "https://www.test.com/search?q=%E6%96%97%E7%A0%B4&p=2")
+let au2 = AnalyzeUrl("/s.php,{\"method\":\"POST\",\"body\":\"k={{key}}\",\"charset\":\"gbk\"}", key: "斗破", source: source)
+check("URL POST 方法", au2.method, "POST")
+check("URL POST 地址", au2.url, "https://www.test.com/s.php")
+check("URL POST 包体", au2.body ?? "", "k=斗破")
+let au3 = AnalyzeUrl("https://www.test.com/s?k={{key}},{'charset':'gbk'}", key: "斗破", source: source)
+check("URL GBK 编码", au3.requestUrl, "https://www.test.com/s?k=%B6%B7%C6%C6")
+let au4 = AnalyzeUrl("https://www.test.com/list_<,_2,_3>.html", page: 1, source: source)
+check("URL 分页 <> 第1页", au4.url, "https://www.test.com/list_.html")
+let au5 = AnalyzeUrl("https://www.test.com/list_<,_2,_3>.html", page: 3, source: source)
+check("URL 分页 <> 第3页", au5.url, "https://www.test.com/list_3.html")
+let au6 = AnalyzeUrl("@js:'https://www.test.com/s?k='+encodeURIComponent(key)", key: "遮天", source: source)
+check("URL @js 生成", au6.url, "https://www.test.com/s?k=%E9%81%AE%E5%A4%A9")
+let au7 = AnalyzeUrl("https://www.test.com/s?k=searchKey&p=searchPage", key: "遮天", page: 1, source: source)
+check("URL 旧版 searchKey", au7.requestUrl, "https://www.test.com/s?k=%E9%81%AE%E5%A4%A9&p=1")
+
+// ── 书源导入（宽松格式）
+let srcJSON = """
+[{"bookSourceUrl":"https://a.com","bookSourceName":"A","enabled":1,"bookSourceType":"0",
+  "ruleSearch":{"bookList":"class.item","name":"tag.a@text","checkKeyWord":123},
+  "header":{"User-Agent":"X"}},
+ {"bookSourceName":"缺地址"}]
+"""
+let imported = (try? BookSourceImporter.parse(Data(srcJSON.utf8))) ?? []
+check("导入 数量（跳过无效）", "\(imported.count)", "1")
+check("导入 数字型布尔", "\(imported.first?.isEnabled ?? false)", "true")
+check("导入 规则数字转字符串", imported.first?.ruleSearch?.checkKeyWord ?? "", "123")
+check("导入 header 对象", imported.first?.headerMap()["User-Agent"] ?? "", "X")
+
+// ── 加解密
+let aes = SymmetricCryptoBridge("AES/CBC/PKCS5Padding", Data("1234567890123456".utf8), Data("abcdefghijklmnop".utf8))
+let enc = aes.encryptBase64("你好世界")
+check("AES 加解密往返", aes.decryptStr(enc), "你好世界")
+
+print("\n结果：通过 \(passed) 项，失败 \(failed) 项")
+exit(failed == 0 ? 0 : 1)

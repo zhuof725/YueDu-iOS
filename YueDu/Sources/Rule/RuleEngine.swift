@@ -18,6 +18,26 @@ final class RuleEngine {
     private var isJSON = false
     private var isRegex = false
     private var jsCtx: JSContext?
+    // 同一份内容只解析一次
+    private var cacheJsoup: AnalyzeByJSoup?
+    private var cacheXPath: AnalyzeByXPath?
+    private var cacheJson: AnalyzeByJSonPath?
+
+    private func jsoup(_ o: Any, _ isContent: Bool) -> AnalyzeByJSoup {
+        guard isContent else { return AnalyzeByJSoup(o) }
+        if let c = cacheJsoup { return c }
+        let a = AnalyzeByJSoup(o); cacheJsoup = a; return a
+    }
+    private func xpath(_ o: Any, _ isContent: Bool) -> AnalyzeByXPath {
+        guard isContent else { return AnalyzeByXPath(o) }
+        if let c = cacheXPath { return c }
+        let a = AnalyzeByXPath(o); cacheXPath = a; return a
+    }
+    private func json(_ o: Any, _ isContent: Bool) -> AnalyzeByJSonPath {
+        guard isContent else { return AnalyzeByJSonPath(o) }
+        if let c = cacheJson { return c }
+        let a = AnalyzeByJSonPath(o); cacheJson = a; return a
+    }
 
     init(source: BookSource?, book: Book? = nil, logger: DebugLog? = nil) {
         self.source = source
@@ -31,9 +51,11 @@ final class RuleEngine {
     func setContent(_ content: Any, baseUrl: String? = nil) -> RuleEngine {
         self.content = content
         if content is Element { isJSON = false }
+        else if content is [String] { isJSON = false }
         else if content is [String: Any] || content is [Any] { isJSON = true }
         else { isJSON = Util.isJSON(AnalyzeByJSoup.stringOf(content)) }
         if let b = baseUrl { self.baseUrl = b }
+        cacheJsoup = nil; cacheXPath = nil; cacheJson = nil
         return self
     }
 
@@ -63,7 +85,7 @@ final class RuleEngine {
 
     private func context() -> JSContext {
         if let c = jsCtx { return c }
-        let c = JSEngine.shared.makeContext()
+        let c = JSEngine.shared.makeContext(vm: JSVirtualMachine())
         let java = JavaBridge(engine: self)
         c.setObject(java, forKeyedSubscript: "java" as NSString)
         c.evaluateScript("__setupJava(java);")
@@ -293,30 +315,25 @@ final class RuleEngine {
         guard let rule = rule, !rule.isEmpty else { return nil }
         let rules = splitSourceRule(rule)
         guard var result: Any = mContent ?? content, !rules.isEmpty else { return nil }
-        if let dict = result as? [String: Any] {
-            let sr = rules[0]
+        let fromContent = mContent == nil
+        for (step, sr) in rules.enumerated() {
             putRule(sr.putMap)
             sr.makeUp(result, self)
-            if let v = dict[sr.rule] { result = v } else { return nil }
-        } else {
-            for sr in rules {
-                putRule(sr.putMap)
-                sr.makeUp(result, self)
-                let r = sr.rule
-                if !r.isEmpty {
-                    switch sr.mode {
-                    case .js: result = evalJS(r, result: result) ?? ""
-                    case .webJs: result = webJs(r, result)
-                    case .json: result = AnalyzeByJSonPath(result).getStringList(r)
-                    case .xpath: result = AnalyzeByXPath(result).getStringList(r)
-                    case .default: result = AnalyzeByJSoup(result).getStringList(r)
-                    case .regex: result = r
-                    }
+            let r = sr.rule
+            let isC = fromContent && step == 0
+            if !r.isEmpty {
+                switch sr.mode {
+                case .js: result = evalJS(r, result: result) ?? ""
+                case .webJs: result = webJs(r, result)
+                case .json: result = json(result, isC).getStringList(r)
+                case .xpath: result = xpath(result, isC).getStringList(r)
+                case .default: result = jsoup(result, isC).getStringList(r)
+                case .regex: result = r
                 }
-                if !sr.replaceRegex.isEmpty {
-                    if let list = result as? [Any] { result = list.map { replaceRegex(JSEngine.stringify($0), sr) } }
-                    else { result = replaceRegex(JSEngine.stringify(result), sr) }
-                }
+            }
+            if !sr.replaceRegex.isEmpty {
+                if let list = result as? [Any] { result = list.map { replaceRegex(JSEngine.stringify($0), sr) } }
+                else { result = replaceRegex(JSEngine.stringify(result), sr) }
             }
         }
         var list: [String]
@@ -339,25 +356,21 @@ final class RuleEngine {
         guard let ruleStr = ruleStr, !ruleStr.isEmpty else { return "" }
         let rules = splitSourceRule(ruleStr)
         var result: Any? = mContent ?? content
-        if let dict = result as? [String: Any], let sr = rules.first {
-            putRule(sr.putMap)
-            sr.makeUp(result, self)
-            if sr.paramCount > 1 { result = sr.rule }
-            else { result = dict[sr.rule].map { JSEngine.stringify($0) } }
-            if let s = result as? String { result = replaceRegex(s, sr) }
-        } else if result != nil {
-            for sr in rules {
+        let fromContent = mContent == nil
+        if result != nil {
+            for (step, sr) in rules.enumerated() {
                 putRule(sr.putMap)
                 sr.makeUp(result, self)
                 guard let cur = result else { continue }
                 let r = sr.rule
+                let isC = fromContent && step == 0
                 if !r.trimmingCharacters(in: .whitespaces).isEmpty || sr.replaceRegex.isEmpty {
                     switch sr.mode {
                     case .js: result = evalJS(r, result: cur)
                     case .webJs: result = webJs(r, cur)
-                    case .json: result = AnalyzeByJSonPath(cur).getString(r)
-                    case .xpath: result = AnalyzeByXPath(cur).getString(r)
-                    case .default: result = isUrl ? AnalyzeByJSoup(cur).getString0(r) : AnalyzeByJSoup(cur).getString(r)
+                    case .json: result = json(cur, isC).getString(r)
+                    case .xpath: result = xpath(cur, isC).getString(r)
+                    case .default: result = isUrl ? jsoup(cur, isC).getString0(r) : jsoup(cur, isC).getString(r)
                     case .regex: result = r
                     }
                 }
@@ -398,7 +411,8 @@ final class RuleEngine {
     func getElements(_ ruleStr: String) -> [Any] {
         let rules = splitSourceRule(ruleStr, allInOne: true)
         guard var result: Any = content, !rules.isEmpty else { return [] }
-        for sr in rules {
+        for (step, sr) in rules.enumerated() {
+            let first = step == 0
             putRule(sr.putMap)
             let r = sr.rule
             switch sr.mode {
@@ -409,9 +423,9 @@ final class RuleEngine {
             case .webJs:
                 let s = webJs(r, result)
                 result = JSONPath.parse(s) as? [Any] ?? []
-            case .json: result = AnalyzeByJSonPath(result).getList(r)
-            case .xpath: result = AnalyzeByXPath(result).getElements(r)
-            case .default: result = AnalyzeByJSoup(result).getElements(r)
+            case .json: result = json(result, first).getList(r)
+            case .xpath: result = xpath(result, first).getElements(r)
+            case .default: result = jsoup(result, first).getElements(r)
             }
         }
         if let a = result as? [Any] { return a }
