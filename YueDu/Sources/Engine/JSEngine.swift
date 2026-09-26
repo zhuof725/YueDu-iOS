@@ -158,6 +158,7 @@ final class JSEngine {
     func webView(_ html: String?, _ url: String?, _ js: String?) -> String
     func startBrowserAwait(_ url: String, _ title: String) -> Any
     func startBrowser(_ url: String, _ title: String)
+    func getVerificationCode(_ imageUrl: String) -> String
     func showBrowser(_ url: String, _ html: String?, _ preloadJs: String?, _ config: String?)
     func openUrl(_ url: String)
     func upLoginData(_ data: Any?)
@@ -328,7 +329,8 @@ final class JSEngine {
     func startBrowserAwait(_ url: String, _ title: String) -> Any {
         #if canImport(UIKit)
         let abs = Util.absoluteURL(source?.bookSourceUrl, url)
-        let r = BrowserPresenter.presentAndWait(url: abs, title: title, headers: source?.headerMap() ?? [:])
+        let r = BrowserPresenter.presentAndWait(url: abs, title: title, headers: source?.headerMap() ?? [:],
+                                                sourceKey: source?.bookSourceUrl)
         return ResponseBridge(r)
         #else
         return ResponseBridge(HTTPResponse(url: url, body: "", data: Data(), code: 0, headers: [:]))
@@ -348,6 +350,15 @@ final class JSEngine {
             #endif
         }
     }
+    /// 图片验证码：弹出图片和输入框，等用户输入（Legado java.getVerificationCode）
+    func getVerificationCode(_ imageUrl: String) -> String {
+        #if canImport(UIKit)
+        let abs = Util.absoluteURL(source?.bookSourceUrl, imageUrl)
+        return BrowserPresenter.askCode(imageUrl: abs, headers: source?.headerMap() ?? [:], title: source?.bookSourceName ?? "")
+        #else
+        return ""
+        #endif
+    }
     func showBrowser(_ url: String, _ html: String?, _ preloadJs: String?, _ config: String?) { startBrowser(url, "") }
     func openUrl(_ url: String) { startBrowser(url, "") }
     func upLoginData(_ data: Any?) {
@@ -366,7 +377,12 @@ final class JSEngine {
         DispatchQueue.main.async { UIPasteboard.general.string = text }
         #endif
     }
-    func getLoginInfoMapJSON() -> String { LoginStore.loginInfo(source?.bookSourceUrl ?? "") ?? "{}" }
+    func getLoginInfoMapJSON() -> String {
+        guard let s = source else { return "{}" }
+        let m = SourceLogin.loginInfoMap(s)
+        guard let d = try? JSONSerialization.data(withJSONObject: m) else { return "{}" }
+        return String(data: d, encoding: .utf8) ?? "{}"
+    }
     func downloadFile(_ url: String) -> String { "" }
     func importScript(_ path: String) -> String {
         let u = Util.absoluteURL(source?.bookSourceUrl, path)
@@ -436,13 +452,13 @@ final class JSEngine {
     func setVariable(_ v: String?) { VariableStore.shared.put("src:" + bookSourceUrl, "__variable", v ?? "") }
     func putVariable(_ v: String?) { setVariable(v) }
     func getLoginInfo() -> String? { LoginStore.loginInfo(bookSourceUrl) }
-    func getLoginInfoMap() -> [String: String] { LoginStore.loginInfoMap(bookSourceUrl) }
+    func getLoginInfoMap() -> [String: String] { s.map { SourceLogin.loginInfoMap($0) } ?? LoginStore.loginInfoMap(bookSourceUrl) }
     func putLoginInfo(_ info: String) -> Bool { LoginStore.putLoginInfo(bookSourceUrl, info) }
     func removeLoginInfo() { LoginStore.removeLoginInfo(bookSourceUrl) }
     func getLoginHeader() -> String? { LoginStore.loginHeader(bookSourceUrl) }
     func getLoginHeaderMap() -> [String: String] { LoginStore.headerMap(bookSourceUrl) }
     func putLoginHeader(_ h: String) { LoginStore.putLoginHeader(bookSourceUrl, h) }
-    func removeLoginHeader() { LoginStore.removeLoginHeader(bookSourceUrl) }
+    func removeLoginHeader() { LoginStore.logout(bookSourceUrl) }
     func getHeaderMap() -> [String: String] { s?.headerMap() ?? [:] }
     func put(_ k: String, _ v: String) -> String { VariableStore.shared.put("src:" + bookSourceUrl, k, v); return v }
     func getVar(_ k: String) -> String { VariableStore.shared.get("src:" + bookSourceUrl, k) ?? "" }

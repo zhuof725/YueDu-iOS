@@ -136,7 +136,7 @@ struct BookDetailView: View {
         .fullScreenCover(item: $reading) { b in ReaderView(book: b) }
         .sheet(item: Binding(get: { showLogin ? book : nil }, set: { if $0 == nil { showLogin = false } })) { bk in
             if let src = store.source(for: bk.origin) {
-                SourceLoginView(source: src)
+                SourceLoginView(source: src, book: bk)
             }
         }
         .task { await load() }

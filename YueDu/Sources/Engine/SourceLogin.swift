@@ -125,14 +125,41 @@ enum SourceLogin {
     }
 
     /// 解析登录表单（loginUi 可以是 JSON 数组，也可以是 @js: 生成的）
-    static func rows(_ s: BookSource, current: [String: String] = [:], callback: LoginUICallback? = nil) -> [LoginRow] {
+    static func rows(_ s: BookSource, current: [String: String] = [:], callback: LoginUICallback? = nil, logger: DebugLog? = nil) -> [LoginRow] {
         guard var ui = s.loginUi?.trimmingCharacters(in: .whitespacesAndNewlines), !ui.isEmpty else { return [] }
         if let c = loginUiJs(s) {
-            ui = (try? evalUi(s, c, info: current, callback: callback)) ?? ""
+            do { ui = try evalUi(s, c, info: current, callback: callback, logger: logger) }
+            catch { logger?.log("loginUi 脚本出错：\(error.localizedDescription)"); ui = "" }
         }
-        guard let parsed = BookSourceImporter.parseJSONLoose(ui) else { return [] }
+        guard let parsed = BookSourceImporter.parseJSONLoose(ui) else {
+            logger?.log("loginUi JSON 解析失败：\(ui.prefix(200))")
+            return []
+        }
         let arr: [Any] = (parsed as? [Any]) ?? [parsed]
         return parseRows(arr)
+    }
+
+    /// 对应 Legado BaseSource.getLoginInfoMap()：
+    /// 有保存的登录信息就用；没有时按 loginUi 里各控件（除按钮外）的 default 生成一份并保存
+    static func loginInfoMap(_ s: BookSource) -> [String: String] {
+        let key = s.bookSourceUrl
+        if LoginStore.loginInfo(key) != nil { return LoginStore.loginInfoMap(key) }
+        guard !(s.loginUi ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [:] }
+        // 防止 loginUi 脚本里又调用 source.getLoginInfoMap() 造成死循环
+        let flag = "yuedu.loginInfoMap." + key
+        if Thread.current.threadDictionary[flag] != nil { return [:] }
+        Thread.current.threadDictionary[flag] = true
+        defer { Thread.current.threadDictionary.removeObject(forKey: flag) }
+        var m: [String: String] = [:]
+        for r in rows(s) where r.type != "button" { m[r.name] = r.defaultValue ?? "" }
+        if !m.isEmpty { saveInfo(s, m) }
+        return m
+    }
+
+    /// Legado isAbsUrl：只有 http(s):// 开头的 action 当网址打开，其余都当 JS
+    static func isAbsUrl(_ s: String) -> Bool {
+        let l = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return (l.hasPrefix("http://") || l.hasPrefix("https://")) && !l.contains("\n")
     }
 
     static func parseRows(_ arr: [Any]) -> [LoginRow] {
@@ -163,9 +190,9 @@ enum SourceLogin {
 
     /// 执行「登录脚本 + 代码」，出错抛出
     static func exec(_ s: BookSource, _ code: String, info: [String: String], isLongClick: Bool = false,
-                     callback: LoginUICallback? = nil, logger: DebugLog? = nil) throws -> Any? {
+                     callback: LoginUICallback? = nil, logger: DebugLog? = nil, book: Book? = nil) throws -> Any? {
         let js = "if (typeof result === 'object') __jmap(result);\n" + (loginJs(s) ?? "") + "\n" + code
-        let engine = RuleEngine(source: s, logger: logger)
+        let engine = RuleEngine(source: s, book: book, logger: logger)
         engine.loginCallback = callback
         engine.setContent("", baseUrl: s.bookSourceUrl)
         var err: String?
@@ -176,8 +203,8 @@ enum SourceLogin {
     }
 
     /// 执行 loginUi / viewName 里的 JS，返回字符串
-    static func evalUi(_ s: BookSource, _ code: String, info: [String: String], callback: LoginUICallback? = nil) throws -> String {
-        let v = try exec(s, code, info: info, callback: callback)
+    static func evalUi(_ s: BookSource, _ code: String, info: [String: String], callback: LoginUICallback? = nil, logger: DebugLog? = nil) throws -> String {
+        let v = try exec(s, code, info: info, callback: callback, logger: logger)
         // 脚本直接返回数组/对象时转成 JSON（stringify 对数组是按行拼接）
         if let v = v, !(v is String), JSONSerialization.isValidJSONObject(v),
            let d = try? JSONSerialization.data(withJSONObject: v), let str = String(data: d, encoding: .utf8) { return str }
@@ -193,19 +220,23 @@ enum SourceLogin {
     }
 
     /// 保存表单并调用书源的 login() 函数（对应 Legado BaseSource.login）
-    static func login(_ s: BookSource, info: [String: String], callback: LoginUICallback? = nil, logger: DebugLog? = nil) throws {
-        if let d = try? JSONSerialization.data(withJSONObject: info), let str = String(data: d, encoding: .utf8) {
-            _ = LoginStore.putLoginInfo(s.bookSourceUrl, str)
+    /// 与 Legado SourceLoginDialog.login 一致：表单为空时删除登录信息直接返回；否则保存后执行 login()
+    static func login(_ s: BookSource, info: [String: String], callback: LoginUICallback? = nil,
+                      logger: DebugLog? = nil, book: Book? = nil) throws {
+        if info.isEmpty && !(s.loginUi ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            LoginStore.removeLoginInfo(s.bookSourceUrl)
+            return
         }
+        if !info.isEmpty { saveInfo(s, info) }
         guard loginJs(s) != nil else { return }
-        _ = try exec(s, "if (typeof login == 'function') { login.apply(this); } else { throw('书源没有实现 login 函数'); }",
-                     info: info, callback: callback, logger: logger)
+        _ = try exec(s, "if (typeof login == 'function') { login.apply(this); } else { throw('Function login not implements!!!'); }",
+                     info: info, callback: callback, logger: logger, book: book)
     }
 
-    /// 表单里按钮的动作：网址则打开，否则执行 JS
+    /// 表单里按钮的动作（Legado handleButtonClick）：http 网址用网页打开，否则「登录脚本 + action」当 JS 执行
     static func buttonAction(_ s: BookSource, action: String, info: [String: String], isLongClick: Bool = false,
-                             callback: LoginUICallback? = nil, logger: DebugLog? = nil) throws -> Any? {
-        try exec(s, action, info: info, isLongClick: isLongClick, callback: callback, logger: logger)
+                             callback: LoginUICallback? = nil, logger: DebugLog? = nil, book: Book? = nil) throws -> Any? {
+        try exec(s, action, info: info, isLongClick: isLongClick, callback: callback, logger: logger, book: book)
     }
 
     /// 请求完成后执行 loginCheckJs（书源用它检测登录是否失效、必要时自动重新登录）

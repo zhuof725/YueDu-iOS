@@ -12,6 +12,8 @@ final class LoginWebViewController: UIViewController, WKNavigationDelegate, WKUI
     /// SwiftUI 里使用时由外层负责关闭
     var autoDismiss = true
     private var finished = false
+    /// 关闭时网页的源代码（java.startBrowserAwait 返回给书源脚本）
+    private(set) var pageHTML = ""
 
     init(url: String, title: String, headers: [String: String], onDone: @escaping (String) -> Void) {
         self.url = url
@@ -78,12 +80,15 @@ final class LoginWebViewController: UIViewController, WKNavigationDelegate, WKUI
         guard let store = webView?.configuration.websiteDataStore.httpCookieStore else {
             onDone(final); if autoDismiss { dismiss(animated: true) }; return
         }
-        store.getAllCookies { [weak self] cookies in
-            for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.onDone(final)
-                if self.autoDismiss { self.dismiss(animated: true) }
+        webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] html, _ in
+            self?.pageHTML = (html as? String) ?? ""
+            store.getAllCookies { cookies in
+                for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    self.onDone(final)
+                    if self.autoDismiss { self.dismiss(animated: true) }
+                }
             }
         }
     }
@@ -93,6 +98,32 @@ final class LoginWebViewController: UIViewController, WKNavigationDelegate, WKUI
         webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
             for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
         }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let u = navigationAction.request.url, let scheme = u.scheme?.lowercased() else { decisionHandler(.allow); return }
+        if ["http", "https", "about", "data", "blob", "file"].contains(scheme) { decisionHandler(.allow); return }
+        decisionHandler(.cancel)
+        let a = UIAlertController(title: "跳转到其他应用？", message: u.absoluteString, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        a.addAction(UIAlertAction(title: "确认", style: .default) { _ in UIApplication.shared.open(u) })
+        present(a, animated: true)
+    }
+
+    // 网页里的 alert/confirm（例如「复制标签」页面）
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "好", style: .default) { _ in completionHandler() })
+        present(a, animated: true)
+    }
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(false) })
+        a.addAction(UIAlertAction(title: "确认", style: .default) { _ in completionHandler(true) })
+        present(a, animated: true)
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,

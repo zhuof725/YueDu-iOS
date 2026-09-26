@@ -282,6 +282,23 @@ check("登录 网址型", SourceLogin.loginPageUrl(loginSrc4) ?? "", "https://ww
 check("登录 网址型 非 JS", "\(SourceLogin.loginJs(loginSrc4) == nil)", "true")
 let loginSrc5 = BookSource(bookSourceUrl: "https://www.l5.com", bookSourceName: "L5", loginUrl: "/user/login.html")
 check("登录 相对网址", SourceLogin.webLoginUrl(loginSrc5), "https://www.l5.com/user/login.html")
+// 对照 Legado 源码的行为
+let dfSrc = BookSource(bookSourceUrl: "https://df.test.com", bookSourceName: "DF",
+    loginUrl: "function login(){ source.putLoginHeader(JSON.stringify({k: source.getLoginInfoMap().get('线路')})); }",
+    loginUi: "[{\"name\":\"账号\",\"type\":\"text\",\"default\":\"guest\"},{\"name\":\"线路\",\"type\":\"select\",\"chars\":[\"A\",\"B\"],\"default\":\"B\"},{\"name\":\"go\",\"type\":\"button\",\"action\":\"login()\"}]")
+check("Legado getLoginInfoMap 默认值", SourceLogin.loginInfoMap(dfSrc).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ","), "线路=B,账号=guest")
+check("Legado getLoginInfoMap 自动保存", LoginStore.loginInfoMap(dfSrc.bookSourceUrl)["账号"] ?? "", "guest")
+_ = try? SourceLogin.buttonAction(dfSrc, action: "login()", info: LoginStore.loginInfoMap(dfSrc.bookSourceUrl))
+check("Legado 按钮 action 调 login()", LoginStore.headerMap(dfSrc.bookSourceUrl)["k"] ?? "", "B")
+check("Legado removeLoginHeader", { _ = try? SourceLogin.buttonAction(dfSrc, action: "source.removeLoginHeader()", info: [:]); return LoginStore.loginHeader(dfSrc.bookSourceUrl) ?? "" }(), "")
+try? SourceLogin.login(dfSrc, info: [:])
+check("Legado 空表单确认=删除登录信息", LoginStore.loginInfo(dfSrc.bookSourceUrl) ?? "nil", "nil")
+check("Legado isAbsUrl 网址", "\(SourceLogin.isAbsUrl("https://a.com/x"))", "true")
+check("Legado isAbsUrl 脚本", "\(SourceLogin.isAbsUrl("loginQidian()"))", "false")
+let lcSrc = BookSource(bookSourceUrl: "https://lc.test.com", bookSourceName: "LC", loginUrl: "function login(){}",
+    loginUi: "[{\"name\":\"b\",\"type\":\"button\",\"action\":\"java.put('lc', String(isLongClick))\"}]")
+_ = try? SourceLogin.buttonAction(lcSrc, action: "java.put('lc', String(isLongClick))", info: [:], isLongClick: true)
+check("Legado 长按 isLongClick", VariableStore.shared.get("src:https://lc.test.com", "lc") ?? "", "true")
 
 // ── 加解密
 let aes = SymmetricCryptoBridge("AES/CBC/PKCS5Padding", Data("1234567890123456".utf8), Data("abcdefghijklmnop".utf8))
