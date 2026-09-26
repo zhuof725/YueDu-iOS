@@ -81,6 +81,8 @@ final class AnalyzeUrl {
     let source: BookSource?
     let book: Book?
     let engine: RuleEngine
+    /// 是否执行书源的 loginCheckJs（书源 JS 里的 java.ajax 等内部请求不执行，避免循环）
+    var checkLogin = true
 
     init(_ mUrl: String, key: String? = nil, page: Int? = nil, baseUrl: String = "",
          source: BookSource?, book: Book? = nil, engine: RuleEngine? = nil) {
@@ -238,10 +240,17 @@ final class AnalyzeUrl {
                 bodyData = encodeParams(b).data(using: .utf8)
             }
         }
+        let res: HTTPResponse
         if useWebView {
-            return try WebViewLoader.load(url: requestUrl, headers: headers, js: webJs)
+            res = try WebViewLoader.load(url: requestUrl, headers: headers, js: webJs)
+        } else {
+            res = try HTTP.request(url: requestUrl, method: method, headers: headers,
+                                   body: bodyData, charset: charset, retry: retry)
         }
-        return try HTTP.request(url: requestUrl, method: method, headers: headers,
-                                body: bodyData, charset: charset, retry: retry)
+        // 登录检查（书源可在这里判断是否掉线并自动重新登录）
+        if checkLogin, let s = source, s.loginCheckJs?.isEmpty == false {
+            return SourceLogin.check(s, response: res, engine: engine)
+        }
+        return res
     }
 }

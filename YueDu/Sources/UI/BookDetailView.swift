@@ -11,6 +11,9 @@ struct BookDetailView: View {
     @State private var reading: Book?
     @State private var showToc = false
     @State private var showSources = false
+    @State private var showLogin = false
+
+    private var srcHasLogin: Bool { store.source(for: book.origin)?.hasLogin ?? false }
 
     init(book: Book, alternatives: [Book] = []) {
         _book = State(initialValue: book)
@@ -131,6 +134,11 @@ struct BookDetailView: View {
             }
         }
         .fullScreenCover(item: $reading) { b in ReaderView(book: b) }
+        .sheet(item: Binding(get: { showLogin ? book : nil }, set: { if $0 == nil { showLogin = false } })) { bk in
+            if let src = store.source(for: bk.origin) {
+                SourceLoginView(source: src)
+            }
+        }
         .task { await load() }
     }
 

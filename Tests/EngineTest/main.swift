@@ -205,6 +205,21 @@ check("导入 RSS 源提示", { do { _ = try BookSourceImporter.parseReport("[{\
 check("链接 提取 legado://", BookSourceImporter.extractURL("legado://import/bookSource?src=https%3A%2F%2Fa.com%2Fs.json") ?? "", "https://a.com/s.json")
 check("链接 提取 夹杂文字", BookSourceImporter.extractURL("书源地址：https://a.com/s.json 复制打开") ?? "", "https://a.com/s.json")
 
+// ── 登录
+let loginSource = BookSource(bookSourceUrl: "https://login.test.com", bookSourceName: "登录测试",
+    loginUrl: "@js:function login(){ java.ajax(\"https://login.test.com/api/login?u=\"+encodeURIComponent(result.username)+\"&p=\"+encodeURIComponent(result.password)); source.putLoginHeader({token:'abc123'}); }",
+    loginUi: \"[{\\\"name\\\":\\\"username\\\",\\\"type\\\":\\\"text\\\"},{\\\"name\\\":\\\"password\\\",\\\"type\\\":\\\"password\\\"},{\\\"name\\\":\\\"login\\\",\\\"type\\\":\\\"button\\\",\\\"action\\\":\\\"login.apply(this)\\\"}]\")
+check("登录 表单行数", "\(SourceLogin.rows(loginSource).count)", "3")
+check("登录 表单字段", SourceLogin.rows(loginSource).map(\.name).joined(separator: ","), "username,password,login")
+try? SourceLogin.login(loginSource, info: ["username": "u1", "password": "p1"])
+check("登录 保存账号信息", LoginStore.loginInfoMap(loginSource.bookSourceUrl)["username"] ?? "", "u1")
+check("登录 保存登录头", LoginStore.headerMap(loginSource.bookSourceUrl)["token"] ?? "", "abc123")
+check("登录 请求头自动带上", loginSource.headerMap()["token"] ?? "", "abc123")
+check("登录 状态", "\(LoginStore.isLoggedIn(loginSource.bookSourceUrl))", "true")
+let loginSrc2 = BookSource(bookSourceUrl: "https://l2.test.com", bookSourceName: "L2",
+    loginUi: "{\"name\":\"v\",\"type\":\"toggle\",\"chars\":[\"开\",\"关\"]}")
+check("登录 UI 宽松 JSON(单对象)", "\(SourceLogin.rows(loginSrc2).count)", "1")
+
 // ── 加解密
 let aes = SymmetricCryptoBridge("AES/CBC/PKCS5Padding", Data("1234567890123456".utf8), Data("abcdefghijklmnop".utf8))
 let enc = aes.encryptBase64("你好世界")

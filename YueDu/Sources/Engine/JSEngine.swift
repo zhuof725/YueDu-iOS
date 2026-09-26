@@ -29,7 +29,8 @@ final class JSEngine {
         ctx.exception = nil
         let v = ctx.evaluateScript(script)
         if let e = ctx.exception {
-            let msg = e.toString() ?? "JS 错误"
+            var msg = e.toString() ?? "JS 错误"
+            if msg.hasPrefix("Error: ") { msg = String(msg.dropFirst(7)) }
             let line = e.forProperty("line")?.toInt32() ?? 0
             let err = "JS 执行出错(第\(line)行): \(msg)"
             ctx.setObject(nil, forKeyedSubscript: "__err" as NSString)
@@ -79,6 +80,14 @@ final class JSEngine {
       j.get = function(a,b){ return arguments.length>=2 ? j.httpGet(a,b) : j.getVar(a); };
       j.encodeURI = function(a,b){ return b ? j.encodeURIWith(String(a),String(b)) : j.encodeURIWith(String(a),'UTF-8'); };
       j.getString = function(r,a,b){ if (typeof a==='boolean') return j.getStringUrl(r,a); if (typeof b==='boolean') { if (a!=null) j.setContent(a); return j.getStringUrl(r,b);} if (a!=null && a!==undefined) j.setContent(a); return j.getStringUrl(r,false); };
+    }
+    function __setupSource(s){
+      if (!s) return;
+      s.get = function(k){ return s.getVar(String(k)); };
+      var gm = s.getLoginInfoMap; s.getLoginInfoMap = function(){ return gm.call(s) || {}; };
+      var hm = s.getLoginHeaderMap; s.getLoginHeaderMap = function(){ return hm.call(s) || {}; };
+      var pli = s.putLoginInfo; s.putLoginInfo = function(v){ return pli.call(s, typeof v === 'string' ? v : JSON.stringify(v)); };
+      var plh = s.putLoginHeader; s.putLoginHeader = function(v){ return plh.call(s, typeof v === 'string' ? v : JSON.stringify(v)); };
     }
     if (!Array.prototype.flat) { Array.prototype.flat = function(){ return [].concat.apply([], this); }; }
     """
@@ -155,6 +164,7 @@ final class JSEngine {
     func ajax(_ url: String) -> String {
         do {
             let a = AnalyzeUrl(url, source: source, book: engine?.book, engine: engine)
+            a.checkLogin = false
             return try a.fetch().body
         } catch { engine?.log("ajax 失败 \(url): \(error.localizedDescription)"); return "" }
     }
@@ -167,6 +177,7 @@ final class JSEngine {
             let src = source, bk = engine?.book
             DispatchQueue.global().async {
                 let a = AnalyzeUrl(u, source: src, book: bk, engine: RuleEngine(source: src, book: bk))
+                a.checkLogin = false
                 out[i] = (try? a.fetch().body) ?? ""
                 g.leave()
             }
@@ -196,6 +207,7 @@ final class JSEngine {
     func connect(_ url: String) -> Any {
         do {
             let a = AnalyzeUrl(url, source: source, book: engine?.book, engine: engine)
+            a.checkLogin = false
             return ResponseBridge(try a.fetch())
         } catch { return ResponseBridge(HTTPResponse(url: url, body: "", data: Data(), code: 0, headers: [:])) }
     }
@@ -284,7 +296,13 @@ final class JSEngine {
         catch { return "" }
     }
     func startBrowserAwait(_ url: String, _ title: String) -> Any {
+        #if canImport(UIKit)
+        let abs = Util.absoluteURL(source?.bookSourceUrl, url)
+        let r = BrowserPresenter.presentAndWait(url: abs, title: title, headers: source?.headerMap() ?? [:])
+        return ResponseBridge(r)
+        #else
         return ResponseBridge(HTTPResponse(url: url, body: "", data: Data(), code: 0, headers: [:]))
+        #endif
     }
     func downloadFile(_ url: String) -> String { "" }
     func importScript(_ path: String) -> String {
@@ -324,14 +342,23 @@ final class JSEngine {
     var bookSourceUrl: String { get }
     var bookSourceName: String { get }
     var loginUrl: String { get }
+    var header: String { get }
     func getKey() -> String
+    func getTag() -> String
     func getVariable() -> String
     func setVariable(_ v: String?)
-    func getLoginInfo() -> String
+    func putVariable(_ v: String?)
+    func getLoginInfo() -> String?
     func getLoginInfoMap() -> [String: String]
-    func getLoginHeader() -> String
+    func putLoginInfo(_ info: String) -> Bool
+    func removeLoginInfo()
+    func getLoginHeader() -> String?
     func getLoginHeaderMap() -> [String: String]
     func putLoginHeader(_ h: String)
+    func removeLoginHeader()
+    func getHeaderMap() -> [String: String]
+    func put(_ k: String, _ v: String) -> String
+    func getVar(_ k: String) -> String
 }
 @objc final class SourceBridge: NSObject, SourceBridgeExports {
     let s: BookSource?
@@ -339,14 +366,23 @@ final class JSEngine {
     var bookSourceUrl: String { s?.bookSourceUrl ?? "" }
     var bookSourceName: String { s?.bookSourceName ?? "" }
     var loginUrl: String { s?.loginUrl ?? "" }
+    var header: String { s?.header ?? "" }
     func getKey() -> String { bookSourceUrl }
+    func getTag() -> String { bookSourceName }
     func getVariable() -> String { VariableStore.shared.get("src:" + bookSourceUrl, "__variable") ?? "" }
     func setVariable(_ v: String?) { VariableStore.shared.put("src:" + bookSourceUrl, "__variable", v ?? "") }
-    func getLoginInfo() -> String { VariableStore.shared.get("src:" + bookSourceUrl, "__loginInfo") ?? "" }
-    func getLoginInfoMap() -> [String: String] { AnalyzeUrl.parseLooseJSON(getLoginInfo())?.mapValues { "\($0)" } ?? [:] }
-    func getLoginHeader() -> String { VariableStore.shared.get("src:" + bookSourceUrl, "__loginHeader") ?? "" }
-    func getLoginHeaderMap() -> [String: String] { AnalyzeUrl.parseLooseJSON(getLoginHeader())?.mapValues { "\($0)" } ?? [:] }
-    func putLoginHeader(_ h: String) { VariableStore.shared.put("src:" + bookSourceUrl, "__loginHeader", h) }
+    func putVariable(_ v: String?) { setVariable(v) }
+    func getLoginInfo() -> String? { LoginStore.loginInfo(bookSourceUrl) }
+    func getLoginInfoMap() -> [String: String] { LoginStore.loginInfoMap(bookSourceUrl) }
+    func putLoginInfo(_ info: String) -> Bool { LoginStore.putLoginInfo(bookSourceUrl, info) }
+    func removeLoginInfo() { LoginStore.removeLoginInfo(bookSourceUrl) }
+    func getLoginHeader() -> String? { LoginStore.loginHeader(bookSourceUrl) }
+    func getLoginHeaderMap() -> [String: String] { LoginStore.headerMap(bookSourceUrl) }
+    func putLoginHeader(_ h: String) { LoginStore.putLoginHeader(bookSourceUrl, h) }
+    func removeLoginHeader() { LoginStore.removeLoginHeader(bookSourceUrl) }
+    func getHeaderMap() -> [String: String] { s?.headerMap() ?? [:] }
+    func put(_ k: String, _ v: String) -> String { VariableStore.shared.put("src:" + bookSourceUrl, k, v); return v }
+    func getVar(_ k: String) -> String { VariableStore.shared.get("src:" + bookSourceUrl, k) ?? "" }
 }
 
 @objc protocol CookieBridgeExports: JSExport {
@@ -383,11 +419,13 @@ final class JSEngine {
 @objc protocol CacheBridgeExports: JSExport {
     func get(_ k: String) -> String?
     func put(_ k: String, _ v: Any?)
+    func put(_ k: String, _ v: Any?, _ t: Int)
     func delete(_ k: String)
 }
 @objc final class CacheBridge: NSObject, CacheBridgeExports {
     func get(_ k: String) -> String? { VariableStore.shared.cacheGet(k) }
     func put(_ k: String, _ v: Any?) { VariableStore.shared.cachePut(k, JSEngine.stringify(v)) }
+    func put(_ k: String, _ v: Any?, _ t: Int) { put(k, v) }
     func delete(_ k: String) { VariableStore.shared.cachePut(k, "") }
 }
 

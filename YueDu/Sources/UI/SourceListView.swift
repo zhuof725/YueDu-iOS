@@ -11,6 +11,7 @@ struct SourceListView: View {
     @State private var importing = false
     @State private var confirmDeleteAll = false
     @State private var shareURL: URL?
+    @State private var loginSource: BookSource?
 
     private var list: [BookSource] {
         let f = filter.trimmingCharacters(in: .whitespaces)
@@ -35,6 +36,12 @@ struct SourceListView: View {
                     Section(header: Text("共 \(store.sources.count) 个，启用 \(store.sources.filter { $0.isEnabled }.count) 个")) {
                         ForEach(list) { s in
                             NavigationLink { SourceDebugView(source: s) } label: { row(s) }
+                                .swipeActions(edge: .trailing) {
+                                    if s.hasLogin {
+                                        Button("登录") { loginSource = s }.tint(.blue)
+                                    }
+                                    Button(s.isEnabled ? "停用" : "启用") { store.toggleSource(s) }.tint(s.isEnabled ? .gray : .green)
+                                }
                                 .swipeActions(edge: .leading) {
                                     Button(s.isEnabled ? "停用" : "启用") { store.toggleSource(s) }.tint(s.isEnabled ? .gray : .green)
                                 }
@@ -76,6 +83,7 @@ struct SourceListView: View {
                 if case .success(let url) = r { importFromFile(url) }
             }
             .sheet(item: $shareURL) { u in ShareSheet(items: [u]) }
+            .sheet(item: $loginSource) { src in SourceLoginView(source: src) }
         }
         .navigationViewStyle(.stack)
         .onOpenURL { url in handleOpenURL(url) }

@@ -11,6 +11,9 @@ final class RuleEngine {
     var chapter: BookChapter?
     var nextChapterUrl: String?
     var logger: DebugLog?
+    /// JS 出错时回调（登录流程用它把错误显示给用户）
+    var onJSError: ((String) -> Void)?
+    var lastError: String?
 
     private(set) var content: Any?
     private(set) var baseUrl: String?
@@ -92,6 +95,7 @@ final class RuleEngine {
         c.setObject(CookieBridge(), forKeyedSubscript: "cookie" as NSString)
         c.setObject(CacheBridge(), forKeyedSubscript: "cache" as NSString)
         c.setObject(SourceBridge(source), forKeyedSubscript: "source" as NSString)
+        c.evaluateScript("__setupSource(source);")
         if let lib = source?.jsLib, !lib.isEmpty, !lib.trimmingCharacters(in: .whitespaces).hasPrefix("{") {
             _ = JSEngine.run(c, lib)
         }
@@ -117,7 +121,7 @@ final class RuleEngine {
         }
         for (k, v) in extra { c.setObject(v, forKeyedSubscript: k as NSString) }
         let r = JSEngine.run(c, js)
-        if let e = r as? JSEngine.JSError { log(e.message); return nil }
+        if let e = r as? JSEngine.JSError { log(e.message); onJSError?(e.message); return nil }
         return r
     }
 

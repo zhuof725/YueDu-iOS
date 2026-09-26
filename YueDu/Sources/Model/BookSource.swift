@@ -13,6 +13,9 @@ struct BookSource: Codable, Identifiable, Hashable {
     var enabledExplore: Bool?
     var header: String?
     var loginUrl: String?
+    var loginUi: String?
+    var loginCheckJs: String?
+    var coverDecodeJs: String?
     var bookUrlPattern: String?
     var searchUrl: String?
     var exploreUrl: String?
@@ -32,10 +35,18 @@ struct BookSource: Codable, Identifiable, Hashable {
 
     var isEnabled: Bool { enabled ?? true }
 
+    /// 这个书源是否支持登录
+    var hasLogin: Bool {
+        !(loginUrl ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !(loginUi ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// 解析 header 字段（可以是 JSON 对象，也可以是 @js: 代码）
     func headerMap() -> [String: String] {
         guard let h = header?.trimmingCharacters(in: .whitespacesAndNewlines), !h.isEmpty else {
-            return ["User-Agent": BookSource.defaultUA]
+            var m = ["User-Agent": BookSource.defaultUA]
+            for (k, v) in LoginStore.headerMap(bookSourceUrl) { m[k] = v }
+            return m
         }
         var map: [String: String] = [:]
         if h.hasPrefix("@js:") || h.lowercased().hasPrefix("<js>") {
@@ -55,6 +66,8 @@ struct BookSource: Codable, Identifiable, Hashable {
         if map["User-Agent"] == nil && map["user-agent"] == nil {
             map["User-Agent"] = BookSource.defaultUA
         }
+        // 登录后保存的请求头（例如 token、Cookie）
+        for (k, v) in LoginStore.headerMap(bookSourceUrl) { map[k] = v }
         return map
     }
 
@@ -130,7 +143,7 @@ enum BookSourceImporter {
     private static let boolKeys: Set<String> = ["enabled", "enabledExplore", "enabledCookieJar"]
     private static let ruleKeys: Set<String> = ["ruleSearch", "ruleExplore", "ruleBookInfo", "ruleToc", "ruleContent"]
     private static let stringKeys: [String] = ["bookSourceUrl", "bookSourceName", "bookSourceGroup", "bookSourceComment",
-        "header", "loginUrl", "bookUrlPattern", "searchUrl", "exploreUrl", "jsLib", "concurrentRate", "variableComment"]
+        "header", "loginUrl", "loginUi", "loginCheckJs", "coverDecodeJs", "bookUrlPattern", "searchUrl", "exploreUrl", "jsLib", "concurrentRate", "variableComment"]
 
     /// 字节 → 文本（兼容 UTF-8 BOM、GBK 编码的 txt）
     static func text(from data: Data) -> String {
