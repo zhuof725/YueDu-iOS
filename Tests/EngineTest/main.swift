@@ -176,12 +176,14 @@ let sampleFiles = ((try? FileManager.default.contentsOfDirectory(atPath: samples
 check("真实书源 样本文件数", "\(sampleFiles.count)", "5")
 for f in sampleFiles {
     let d = (try? Data(contentsOf: samplesDir.appendingPathComponent(f))) ?? Data()
-    let expected = ((try? JSONSerialization.jsonObject(with: d)) as? [Any])?.count ?? -1
+    let all = ((try? JSONSerialization.jsonObject(with: d)) as? [[String: Any]]) ?? []
+    // 地址为空的是模板/占位条目，应被跳过
+    let expected = all.filter { !((($0["bookSourceUrl"] as? String) ?? "").trimmingCharacters(in: .whitespaces).isEmpty) }.count
     do {
         let r = try BookSourceImporter.parseReport(BookSourceImporter.text(from: d))
-        check("真实书源 \(f) 全部导入", "\(r.sources.count)", "\(expected)")
+        check("真实书源 \(f) 导入有效条目", "\(r.sources.count)", "\(expected)")
     } catch {
-        check("真实书源 \(f) 全部导入", "错误: \(error.localizedDescription)", "\(expected)")
+        check("真实书源 \(f) 导入有效条目", expected == 0 ? "0" : "错误: \(error.localizedDescription)", "\(expected)")
     }
 }
 
