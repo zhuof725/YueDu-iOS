@@ -30,7 +30,7 @@ final class JSEngine {
 
     static func run(_ ctx: JSContext, _ script: String) -> Any? {
         ctx.exception = nil
-        let v = ctx.evaluateScript(script)
+        let v = ctx.evaluateScript(RhinoCompat.normalize(script))
         if let e = ctx.exception {
             var msg = e.toString() ?? "JS 错误"
             if msg.hasPrefix("Error: ") { msg = String(msg.dropFirst(7)) }

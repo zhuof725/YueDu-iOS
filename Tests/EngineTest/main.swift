@@ -310,6 +310,17 @@ if let a = try? BookSourceImporter.parseReport(arrImport).sources.first {
     check("loginUi 为数组时导入", "\(SourceLogin.rows(a).count)", "2")
 } else { check("loginUi 为数组时导入", "失败", "2") }
 check("宽松 JSON 不误吞普通文本", "\(LenientJSON.parse("hello") == nil)", "true")
+// Rhino 写法兼容（JSC 会报语法错误，导致整段登录脚本/界面不执行）
+check("Rhino 顶层 const → var", RhinoCompat.normalize("const a = 1; function f(){ const b = 2 }"), "var a = 1; function f(){ const b = 2 }")
+check("Rhino 字符串内不改", RhinoCompat.normalize("var s = 'const x = 1';"), "var s = 'const x = 1';")
+check("Rhino 参数重复声明", RhinoCompat.normalize("function f(a){ let a = 1; return a }"), "function f(a){ var a = 1; return a }")
+check("Rhino 解构箭头参数", RhinoCompat.normalize("x.map([k, v] => k)"), "x.map(([k, v]) => k)")
+let rhSrc = BookSource(bookSourceUrl: "https://rh.test.com", bookSourceName: "RH",
+    loginUrl: "const API = 'x';\nfunction login(){}",
+    loginUi: "@js:\nconst rows = [{name:'账号', type:'text'}, {name:'登录', type:'button', action:'login()'}];\nlet result = JSON.stringify(rows);\nresult",
+    jsLib: "const API = 'lib';\nfunction helper(){ return 1 }")
+check("Rhino jsLib+loginUrl 重复 const 仍能生成界面", SourceLogin.rows(rhSrc).map(\.name).joined(separator: ","), "账号,登录")
+check("Rhino 远程 jsLib 非 JSON 原样", "\(JsLibLoader.scripts("function a(){}").count)", "1")
 
 // ── 加解密
 let aes = SymmetricCryptoBridge("AES/CBC/PKCS5Padding", Data("1234567890123456".utf8), Data("abcdefghijklmnop".utf8))

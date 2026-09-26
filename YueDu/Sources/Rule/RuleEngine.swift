@@ -98,8 +98,10 @@ final class RuleEngine {
         c.setObject(CacheBridge(), forKeyedSubscript: "cache" as NSString)
         c.setObject(SourceBridge(source), forKeyedSubscript: "source" as NSString)
         c.evaluateScript("__setupSource(source);")
-        if let lib = source?.jsLib, !lib.isEmpty, !lib.trimmingCharacters(in: .whitespaces).hasPrefix("{") {
-            _ = JSEngine.run(c, lib)
+        if let lib = source?.jsLib, !lib.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            for code in JsLibLoader.scripts(lib) {
+                if let e = JSEngine.run(c, code) as? JSEngine.JSError { log("jsLib 出错：\(e.message)") }
+            }
         }
         jsCtx = c
         return c
